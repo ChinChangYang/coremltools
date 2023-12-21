@@ -175,7 +175,7 @@ def convert_graph(context, graph, outputs=None):
         node = graph[node_name]
         if node.op == "return":
             continue
-        logger.info(
+        print(
             "[{}/{}] Converting {} op '{}'".format(i + 1, num_nodes, node.op, node.name)
         )
 

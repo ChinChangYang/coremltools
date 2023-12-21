@@ -413,6 +413,7 @@ class TFConverter:
             # Get the input Var
             for name in func_inputs.keys():
                 input_var = ssa_func.inputs[name]
+                print(f"ssa_func.inputs[{name}]={ssa_func.inputs[name]}")
                 if (
                     types.is_tensor(input_var.sym_type) or types.is_scalar(input_var.sym_type)
                 ) and input_var.dtype == types.fp16:

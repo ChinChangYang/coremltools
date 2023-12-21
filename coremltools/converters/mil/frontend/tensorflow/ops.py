@@ -1328,8 +1328,19 @@ def ImageProjectiveTransformV2(context, node):
 
 @register_tf_op(tf_alias=["DivNoNan"])
 def RealDiv(context, node):
+    print(f"node.inputs[0]={node.inputs[0]} type={type(node.inputs[0])}")
+    print(f"x={context[node.inputs[0]]} type={type(context[node.inputs[0]])}")
+    print(f"x.val={context[node.inputs[0]].val} type={type(context[node.inputs[0]].val)}")
+    print(f"x.sym_val={context[node.inputs[0]].sym_val} type={type(context[node.inputs[0]].sym_val)}")
+    print(f"x.sym_type={context[node.inputs[0]].sym_type} type={type(context[node.inputs[0]].sym_type)}")
     x = mb.cast(x=context[node.inputs[0]], dtype="fp32")
+    print(f"node.inputs[1]={node.inputs[1]} type={type(node.inputs[1])}")
+    print(f"y={context[node.inputs[1]]} type={type(context[node.inputs[1]])}")
+    print(f"y.val={context[node.inputs[1]].val} type={type(context[node.inputs[1]].val)}")
+    print(f"y.sym_val={context[node.inputs[1]].sym_val} type={type(context[node.inputs[1]].sym_val)}")
+    print(f"y.sym_type={context[node.inputs[1]].sym_type} type={type(context[node.inputs[1]].sym_type)}")
     y = mb.cast(x=context[node.inputs[1]], dtype="fp32")
+    print(f"y(after)={y}")
     x = mb.real_div(x=x, y=y, name=node.name)
     context.add(node.name, x)
 
@@ -1555,8 +1566,13 @@ def Cast(context, node):
             "supported.".format(types.get_type_info(node.attr["DstT"]))
         )
     x = context[node.inputs[0]]
+    print(f"x(input)={x}")
     dtype = type_map[node.attr["DstT"]]
     x = mb.cast(x=x, dtype=dtype, name=node.name)
+    print(f"x(output)={x}")
+    print(f"x.val={x.val}")
+    print(f"x.sym_val={x.sym_val}")
+    print(f"x.sym_type={x.sym_type}")
     context.add(node.name, x)
 
 
@@ -1600,7 +1616,12 @@ def Slice(context, node):
 @register_tf_op
 def Sqrt(context, node):
     x = context[node.inputs[0]]
+    print(f"x(input)={x}")
     x = mb.sqrt(x=x, name=node.name)
+    print(f"x(output)={x}")
+    print(f"x.val={x.val}")
+    print(f"x.sym_val={x.sym_val}")
+    print(f"x.sym_type={x.sym_type}")
     context.add(node.name, x)
 
 
@@ -1813,6 +1834,14 @@ def StridedSlice(context, node):
         axes = [i for i, val in enumerate(new_axis_mask) if val is True]
         x = mb.expand_dims(x=x, axes=axes, name=node.name + "_new_axes")
 
+    print(f"x={x} type={type(x)}")
+    print(f"x.val={x.val} type={type(x.val)}")
+    print(f"x.sym_val={x.sym_val} type={type(x.sym_val)}")
+    print(f"x.sym_type={x.sym_type} type={type(x.sym_type)}")
+    print(f"begin={begin} type={type(begin)}")
+    print(f"end={end} type={type(end)}")
+    print(f"stride={stride} type={type(stride)}")
+
     x = mb.slice_by_index(
         x=x,
         name=node.name,
@@ -1823,6 +1852,11 @@ def StridedSlice(context, node):
         end_mask=end_mask,
         squeeze_mask=squeeze_mask,
     )
+
+    print(f"x(after)={x} type={type(x)}")
+    print(f"x.val={x.val} type={type(x.val)}")
+    print(f"x.sym_val={x.sym_val} type={type(x.sym_val)}")
+    print(f"x.sym_type={x.sym_type} type={type(x.sym_type)}")
 
     context.add(node.name, x)
 
