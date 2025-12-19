@@ -18,7 +18,7 @@ DOCKER_TAG=docker.apple.com/turi/coremltools-linux:latest
 
 # Define python version to use
 PY_EXE ?= $(shell command -v python || command -v python)
-python = 3.7
+python = 3.11
 
 .PHONY: all build checkstyle clean clean_envs docker_build docker_push env env_force lint proto release style test test_fast test_slow wheel
 
