@@ -126,7 +126,7 @@ class KataGoModelBuilder:
         )
 
         # Project global features to trunk channels
-        global_bias = self.ops.build_matmul(global_input_extended, trunk.initial_matmul, name="trunk_initial_matmul")
+        global_bias = self.ops.build_matmul(global_input, trunk.initial_matmul, name="trunk_initial_matmul")
 
         # Reshape to [N, trunk_ch, 1, 1] for broadcasting
         global_bias = mb.reshape(x=global_bias, shape=[1, -1, 1, 1], name="trunk_global_reshape")

@@ -195,7 +195,7 @@ endif()
 # Build kmeans-1d
 set(KMEANS_DIR "${PROJECT_SOURCE_DIR}/deps/kmeans1d")
 execute_process(
-  COMMAND python3 setup.py build_ext --inplace
+  COMMAND ${PYTHON_EXECUTABLE} setup.py build_ext --inplace
   WORKING_DIRECTORY ${KMEANS_DIR}
   RESULT_VARIABLE KMEANS1D_BUILD_STATUS
 )

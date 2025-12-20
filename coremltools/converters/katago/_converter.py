@@ -7,9 +7,6 @@
 Main converter for KataGo models to Core ML format.
 """
 
-import coremltools as ct
-from coremltools import __version__ as ct_version
-
 from ._katago_model_builder import KataGoModelBuilder
 from ._katago_parser import KataGoModelParser
 
@@ -18,7 +15,7 @@ def convert(
     model_path: str,
     minimum_deployment_target=None,
     compute_precision=None,
-    compute_units=ct.ComputeUnit.ALL,
+    compute_units=None,
 ):
     """
     Convert a KataGo model to Core ML format.
@@ -62,6 +59,13 @@ def convert(
     - ownership: Float32 tensor (1, 1, 19, 19) - territory ownership
     - score_value: Float32 tensor (1, score_channels) - score distribution
     """
+    import coremltools as ct
+    from coremltools import __version__ as ct_version
+
+    # Set default for compute_units
+    if compute_units is None:
+        compute_units = ct.ComputeUnit.ALL
+
     # Parse KataGo model
     parser = KataGoModelParser(model_path)
     model_desc = parser.parse()

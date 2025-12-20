@@ -10,6 +10,12 @@ This module provides functionality to convert KataGo neural network models
 to Core ML format.
 """
 
-from ._converter import convert
-
 __all__ = ["convert"]
+
+
+def __getattr__(name):
+    """Lazy import to avoid circular dependency during coremltools initialization."""
+    if name == "convert":
+        from ._converter import convert
+        return convert
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
