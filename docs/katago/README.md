@@ -212,6 +212,9 @@ Building coremltools from source compiles the C++ extensions and creates a Pytho
 ```bash
 # From the coremltools directory
 make build
+
+# If build fails with "ld: library 'c++' not found", use:
+# CXX=/usr/bin/clang++ CC=/usr/bin/clang make build
 ```
 
 **What this does:**

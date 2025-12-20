@@ -202,6 +202,57 @@ sudo xcode-select --reset
 
 ---
 
+### LLVM Clang Linker Error (ld: library 'c++' not found)
+
+**Symptom:**
+```bash
+clang++ -bundle -undefined dynamic_lookup ... -o kmeans1d/_core.cpython-311-darwin.so
+ld: library 'c++' not found
+clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+CMake Error at CMakeLists.txt:204 (message):
+  Could not build kmeans1d dependency
+```
+
+**Cause:**
+The LLVM clang++ compiler at `/usr/local/opt/llvm/bin/clang++` (if installed via Homebrew) cannot find the C++ standard library during linking. This happens when Python's setuptools uses a non-system compiler path.
+
+**Solution:**
+Use the system clang++ compiler instead of LLVM clang++:
+
+```bash
+# Build with system compiler
+CXX=/usr/bin/clang++ CC=/usr/bin/clang make build
+```
+
+**Alternative Solution (if above doesn't work):**
+```bash
+# Clean build directory
+cd ~/katago_workspace/coremltools
+rm -rf build
+make clean
+
+# Rebuild with system compiler explicitly
+CXX=/usr/bin/clang++ CC=/usr/bin/clang make build
+```
+
+**Verification:**
+```bash
+# Check that kmeans1d was built successfully
+ls -la coremltools/_deps/kmeans1d/*.so
+# Should show: kmeans1d/_core.cpython-311-darwin.so
+
+# Verify import works
+python -c "import coremltools; print('Build successful!')"
+```
+
+**Why This Happens:**
+- Conda Python may be compiled with LLVM clang from Homebrew
+- LLVM clang has different library search paths than Apple's system clang
+- The kmeans1d extension module build inherits the compiler from Python
+- System clang (`/usr/bin/clang++`) has proper paths to find `libc++`
+
+---
+
 ### Architecture Mismatch (Intel Mac)
 
 **Symptom:**

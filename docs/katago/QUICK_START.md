@@ -25,6 +25,8 @@ cd coremltools
 git checkout katagocoremltools
 
 # Build (30-60 minutes)
+# Note: If build fails with "ld: library 'c++' not found", use:
+# CXX=/usr/bin/clang++ CC=/usr/bin/clang make build
 make build
 
 # Activate environment
@@ -102,6 +104,7 @@ python test_inference.py                                           # ✓ Test pa
 | Problem | Solution |
 |---------|----------|
 | `conda: command not found` | `source ~/.zshrc` |
+| `ld: library 'c++' not found` | `CXX=/usr/bin/clang++ CC=/usr/bin/clang make build` |
 | Build fails | `xcode-select --install` |
 | `libcoremlpython` not found | `make clean && make build` |
 | Conversion fails | Check model is v15 or v16 |
