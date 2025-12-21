@@ -116,12 +116,9 @@ class KataGoOps:
 
     def build_mish(self, x, name: str):
         """
-        Build Mish activation: x * tanh(softplus(x)).
+        Build Mish activation: x / (1 + 2 / (e * (e + 2))).
 
-        softplus(x) = log(1 + exp(min(x, threshold)))
-
-        The threshold is used to prevent overflow in exp().
-        For float32, threshold=20 is safe (exp(20) ~ 4.8e8).
+        e = exp(x)
 
         Args:
             x: Input tensor.
@@ -130,25 +127,14 @@ class KataGoOps:
         Returns:
             Output tensor after Mish activation.
         """
-        # Clamp x for softplus stability (prevent exp overflow)
-        threshold = np.float32(20.0)
-        x_clamped = mb.minimum(x=x, y=threshold, name=f"{name}_clamp")
+        e = mb.exp(x=x)
+        ep2 = mb.add(x=e, y=2.0)
+        emep2 = mb.mul(x=e, y=ep2)
+        tdemep2 = mb.real_div(x=2.0, y=emep2)
+        optdemep2 = mb.add(x=1.0, y=tdemep2)
+        res = mb.real_div(x=x, y=optdemep2, name=name)
 
-        # softplus = log(1 + exp(x_clamped))
-        exp_x = mb.exp(x=x_clamped, name=f"{name}_exp")
-        one_plus_exp = mb.add(x=exp_x, y=np.float32(1.0), name=f"{name}_one_plus_exp")
-        softplus = mb.log(x=one_plus_exp, name=f"{name}_softplus")
-
-        # For x > threshold, softplus(x) ≈ x, so use select
-        # This ensures numerical correctness for large values
-        use_x = mb.greater(x=x, y=threshold, name=f"{name}_use_x")
-        softplus = mb.select(cond=use_x, a=x, b=softplus, name=f"{name}_softplus_select")
-
-        # tanh(softplus(x))
-        tanh_sp = mb.tanh(x=softplus, name=f"{name}_tanh")
-
-        # x * tanh(softplus(x))
-        return mb.mul(x=x, y=tanh_sp, name=name)
+        return res
 
     def build_batchnorm_activation(self, x, bn_layer: BatchNormLayerDesc,
                                     act_layer: ActivationLayerDesc, mask, name: str):
