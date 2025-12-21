@@ -309,8 +309,8 @@ class KataGoModelBuilder:
             v1, value_head.v1_bn, value_head.v1_activation, mask, "value_v1"
         )
 
-        # Global pooling on v1
-        v1_pooled = self.ops.build_global_pooling(v1, mask, "value_v1_pool")
+        # Global pooling on v1 (value head uses different pooling than trunk/policy)
+        v1_pooled = self.ops.build_global_pooling_value(v1, mask, "value_v1_pool")
 
         # V2: linear + bias + activation
         v2 = self.ops.build_matmul(v1_pooled, value_head.v2_mul, "value_v2_mul")

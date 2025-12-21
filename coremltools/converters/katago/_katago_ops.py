@@ -201,12 +201,12 @@ class KataGoOps:
 
     def build_global_pooling(self, x, mask, name: str):
         """
-        Build KataGo global pooling: mean + max + mean*sqrt pooling.
+        Build KataGo global pooling for trunk and policy head.
 
-        KataGo uses three types of global pooling concatenated together:
+        KataGo poolRowsGPool produces three features in this order:
         1. Mean pooling (sum / count of valid positions)
-        2. Max pooling (maximum over valid positions)
-        3. Mean * sqrt(count) pooling
+        2. Mean * (sqrt(count) - 14) * 0.1
+        3. Max pooling (maximum over valid positions)
 
         Args:
             x: Input tensor of shape [N, C, H, W].
@@ -231,18 +231,71 @@ class KataGoOps:
         x_for_max = mb.add(x=masked_x, y=mask_offset, name=f"{name}_x_for_max")
         max_x = mb.reduce_max(x=x_for_max, axes=[2, 3], keep_dims=True, name=f"{name}_max")
 
-        # Mean * sqrt(count) pooling
+        # Mean * (sqrt(count) - 14) * 0.1 pooling (correct formula)
         sqrt_mask_sum = mb.sqrt(x=mask_sum, name=f"{name}_sqrt_mask_sum")
-        mean_sqrt_x = mb.mul(x=mean_x, y=sqrt_mask_sum, name=f"{name}_mean_sqrt")
+        sqrt_minus_14 = mb.sub(x=sqrt_mask_sum, y=np.float32(14.0), name=f"{name}_sqrt_m14")
+        scaled_factor = mb.mul(x=sqrt_minus_14, y=np.float32(0.1), name=f"{name}_scaled_factor")
+        mean_scaled_x = mb.mul(x=mean_x, y=scaled_factor, name=f"{name}_mean_scaled")
 
         # Squeeze spatial dimensions: [N, C, 1, 1] -> [N, C]
         mean_flat = mb.squeeze(x=mean_x, axes=[2, 3], name=f"{name}_mean_flat")
+        mean_scaled_flat = mb.squeeze(x=mean_scaled_x, axes=[2, 3], name=f"{name}_mean_scaled_flat")
         max_flat = mb.squeeze(x=max_x, axes=[2, 3], name=f"{name}_max_flat")
-        mean_sqrt_flat = mb.squeeze(x=mean_sqrt_x, axes=[2, 3], name=f"{name}_mean_sqrt_flat")
 
-        # Concatenate: [N, C*3]
+        # Concatenate in correct order: [mean, mean_scaled, max]
         return mb.concat(
-            values=[mean_flat, max_flat, mean_sqrt_flat],
+            values=[mean_flat, mean_scaled_flat, max_flat],
+            axis=1,
+            name=f"{name}_concat"
+        )
+
+    def build_global_pooling_value(self, x, mask, name: str):
+        """
+        Build KataGo global pooling for value head (different from trunk/policy).
+
+        KataGo poolRowsValueHead produces three features in this order:
+        1. Mean pooling (sum / count of valid positions)
+        2. Mean * (sqrt(count) - 14) * 0.1
+        3. Mean * ((sqrt(count) - 14)^2 * 0.01 - 0.1)
+
+        Args:
+            x: Input tensor of shape [N, C, H, W].
+            mask: Mask tensor of shape [N, 1, H, W].
+            name: Operation name prefix.
+
+        Returns:
+            Output tensor of shape [N, C*3] with concatenated pooling results.
+        """
+        # Count valid (non-masked) positions
+        mask_sum = mb.reduce_sum(x=mask, axes=[2, 3], keep_dims=True, name=f"{name}_mask_sum")
+
+        # Mean pooling (masked)
+        masked_x = mb.mul(x=x, y=mask, name=f"{name}_masked")
+        sum_x = mb.reduce_sum(x=masked_x, axes=[2, 3], keep_dims=True, name=f"{name}_sum")
+        mean_x = mb.real_div(x=sum_x, y=mask_sum, name=f"{name}_mean")
+
+        # Compute (sqrt(count) - 14)
+        sqrt_mask_sum = mb.sqrt(x=mask_sum, name=f"{name}_sqrt_mask_sum")
+        sqrt_minus_14 = mb.sub(x=sqrt_mask_sum, y=np.float32(14.0), name=f"{name}_sqrt_m14")
+
+        # Feature 2: Mean * (sqrt(count) - 14) * 0.1
+        scaled_factor = mb.mul(x=sqrt_minus_14, y=np.float32(0.1), name=f"{name}_scaled_factor")
+        mean_scaled_x = mb.mul(x=mean_x, y=scaled_factor, name=f"{name}_mean_scaled")
+
+        # Feature 3: Mean * ((sqrt(count) - 14)^2 * 0.01 - 0.1)
+        sqrt_m14_sq = mb.mul(x=sqrt_minus_14, y=sqrt_minus_14, name=f"{name}_sqrt_m14_sq")
+        sqrt_m14_sq_01 = mb.mul(x=sqrt_m14_sq, y=np.float32(0.01), name=f"{name}_sq_01")
+        feature3_factor = mb.sub(x=sqrt_m14_sq_01, y=np.float32(0.1), name=f"{name}_f3_factor")
+        mean_feature3_x = mb.mul(x=mean_x, y=feature3_factor, name=f"{name}_mean_f3")
+
+        # Squeeze spatial dimensions: [N, C, 1, 1] -> [N, C]
+        mean_flat = mb.squeeze(x=mean_x, axes=[2, 3], name=f"{name}_mean_flat")
+        mean_scaled_flat = mb.squeeze(x=mean_scaled_x, axes=[2, 3], name=f"{name}_mean_scaled_flat")
+        mean_f3_flat = mb.squeeze(x=mean_feature3_x, axes=[2, 3], name=f"{name}_mean_f3_flat")
+
+        # Concatenate: [mean, mean_scaled, mean_feature3]
+        return mb.concat(
+            values=[mean_flat, mean_scaled_flat, mean_f3_flat],
             axis=1,
             name=f"{name}_concat"
         )
