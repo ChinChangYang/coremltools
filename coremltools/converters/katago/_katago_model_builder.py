@@ -109,22 +109,6 @@ class KataGoModelBuilder:
         # Initial conv: spatial input -> trunk channels
         x = self.ops.build_conv(spatial_input, trunk.initial_conv, name="trunk_initial_conv")
 
-        # Compute mask sum features for global input processing
-        mask_sum, mask_sum_sqrt_s14_m01, mask_sum_sqrt_s14_m01_sq_s01 = \
-            self.ops.build_mask_sum_features(input_mask, name="trunk")
-
-        # Reshape global input for matmul: [N, G] -> [N, G]
-        # Append mask sum features to global input
-        mask_sum_squeezed = mb.squeeze(x=mask_sum, axes=[2, 3], name="trunk_mask_sum_squeeze")
-        mask_sqrt_squeezed = mb.squeeze(x=mask_sum_sqrt_s14_m01, axes=[2, 3], name="trunk_mask_sqrt_squeeze")
-        mask_sq_squeezed = mb.squeeze(x=mask_sum_sqrt_s14_m01_sq_s01, axes=[2, 3], name="trunk_mask_sq_squeeze")
-
-        global_input_extended = mb.concat(
-            values=[global_input, mask_sum_squeezed, mask_sqrt_squeezed, mask_sq_squeezed],
-            axis=1,
-            name="trunk_global_concat"
-        )
-
         # Project global features to trunk channels
         global_bias = self.ops.build_matmul(global_input, trunk.initial_matmul, name="trunk_initial_matmul")
 

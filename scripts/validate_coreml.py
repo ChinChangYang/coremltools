@@ -211,12 +211,24 @@ def compare_outputs(
             results[key] = {
                 "status": "MISSING",
                 "message": f"Output '{key}' is None in one of the backends",
+                "eigen_is_none": eigen_val is None,
+                "coreml_is_none": coreml_val is None,
             }
             continue
 
         # Flatten for comparison if shapes differ slightly
         eigen_flat = np.asarray(eigen_val).flatten()
         coreml_flat = np.asarray(coreml_val).flatten()
+
+        # Additional check after asarray conversion (in case of object arrays)
+        if eigen_flat.dtype == object or coreml_flat.dtype == object:
+            results[key] = {
+                "status": "MISSING",
+                "message": f"Output '{key}' contains None or object dtype",
+                "eigen_dtype": str(eigen_flat.dtype),
+                "coreml_dtype": str(coreml_flat.dtype),
+            }
+            continue
 
         if eigen_flat.shape != coreml_flat.shape:
             results[key] = {

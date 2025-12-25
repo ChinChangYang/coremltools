@@ -27,8 +27,8 @@ def test_conversion():
         )
 
         print("Conversion successful!")
-        print(f"  Inputs: {[inp.name for inp in mlmodel.input_description]}")
-        print(f"  Outputs: {[out.name for out in mlmodel.output_description]}")
+        # print(f"  Inputs: {[inp.name for inp in mlmodel.input_description]}")
+        # print(f"  Outputs: {[out.name for out in mlmodel.output_description]}")
 
         # Save the model
         output_path = "KataGo.mlpackage"

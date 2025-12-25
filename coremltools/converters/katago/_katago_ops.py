@@ -211,10 +211,8 @@ class KataGoOps:
         mean_x = mb.real_div(x=sum_x, y=mask_sum, name=f"{name}_mean")
 
         # Max pooling (masked) - set masked positions to large negative value
-        neg_inf = np.float32(-1e9)
-        inv_mask = mb.sub(x=np.float32(1.0), y=mask, name=f"{name}_inv_mask")
-        mask_offset = mb.mul(x=inv_mask, y=neg_inf, name=f"{name}_mask_offset")
-        x_for_max = mb.add(x=masked_x, y=mask_offset, name=f"{name}_x_for_max")
+        mask_minus_one = mb.sub(x=mask, y=np.float32(1.0), name=f"{name}_mask_minus_one")
+        x_for_max = mb.add(x=masked_x, y=mask_minus_one, name=f"{name}_x_for_max")
         max_x = mb.reduce_max(x=x_for_max, axes=[2, 3], keep_dims=True, name=f"{name}_max")
 
         # Mean * (sqrt(count) - 14) * 0.1 pooling (correct formula)

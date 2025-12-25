@@ -20,24 +20,41 @@ BOARD_SIZE = 19
 
 
 def generate_zeros_test() -> dict:
-    """Generate all-zeros test case (simplest baseline)."""
+    """Generate empty board test case (simplest realistic baseline)."""
+    spatial = np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
+    # Channel 0 should always be the valid board mask
+    spatial[0, :, :] = 1.0
+
     return {
         "name": "zeros",
-        "description": "All zeros - simplest baseline case",
-        "spatial_input": np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32).tolist(),
+        "description": "Empty board - simplest realistic baseline",
+        "spatial_input": spatial.tolist(),
         "global_input": np.zeros(NUM_GLOBAL_CHANNELS, dtype=np.float32).tolist(),
         "input_mask": np.ones((BOARD_SIZE, BOARD_SIZE), dtype=np.float32).tolist(),
     }
 
 
 def generate_random_seed_42_test() -> dict:
-    """Generate reproducible random test case."""
+    """Generate reproducible random binary pattern test case."""
     np.random.seed(42)
+    spatial = np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
+    # Channel 0 is valid board mask
+    spatial[0, :, :] = 1.0
+    # Randomly place stones in channels 1-6 (binary 0/1)
+    for channel in range(1, 7):
+        random_mask = np.random.rand(BOARD_SIZE, BOARD_SIZE) > 0.7
+        spatial[channel, random_mask] = 1.0
+
+    global_in = np.zeros(NUM_GLOBAL_CHANNELS, dtype=np.float32)
+    # Set some global features with binary/normalized values
+    global_in[0] = 1.0  # Side to move
+    global_in[5] = 0.375  # Normalized komi (7.5/20)
+
     return {
         "name": "random_seed_42",
-        "description": "Reproducible random inputs (seed=42)",
-        "spatial_input": (np.random.randn(NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE).astype(np.float32) * 0.1).tolist(),
-        "global_input": (np.random.randn(NUM_GLOBAL_CHANNELS).astype(np.float32) * 0.1).tolist(),
+        "description": "Reproducible random binary pattern (seed=42)",
+        "spatial_input": spatial.tolist(),
+        "global_input": global_in.tolist(),
         "input_mask": np.ones((BOARD_SIZE, BOARD_SIZE), dtype=np.float32).tolist(),
     }
 
@@ -135,13 +152,28 @@ def generate_diagonal_pattern_test() -> dict:
 
 
 def generate_uniform_small_values_test() -> dict:
-    """Generate uniform small values test case."""
-    spatial = np.full((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), 0.01, dtype=np.float32)
-    global_in = np.full(NUM_GLOBAL_CHANNELS, 0.01, dtype=np.float32)
+    """Generate complex multi-stone pattern test case."""
+    spatial = np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
+    # Channel 0 is valid board mask
+    spatial[0, :, :] = 1.0
+
+    # Create a complex pattern with multiple stone groups
+    # Player stones (channel 1) - fill every 3rd position
+    for i in range(0, BOARD_SIZE, 3):
+        for j in range(0, BOARD_SIZE, 3):
+            spatial[1, i, j] = 1.0
+
+    # Opponent stones (channel 2) - fill offset positions
+    for i in range(1, BOARD_SIZE, 3):
+        for j in range(1, BOARD_SIZE, 3):
+            spatial[2, i, j] = 1.0
+
+    global_in = np.zeros(NUM_GLOBAL_CHANNELS, dtype=np.float32)
+    global_in[0] = 1.0  # Side to move
 
     return {
         "name": "uniform_small",
-        "description": "Uniform small values (0.01) for all inputs",
+        "description": "Complex multi-stone pattern with binary features",
         "spatial_input": spatial.tolist(),
         "global_input": global_in.tolist(),
         "input_mask": np.ones((BOARD_SIZE, BOARD_SIZE), dtype=np.float32).tolist(),
