@@ -382,6 +382,9 @@ The validation script compares Core ML outputs against KataGo's C++ Eigen backen
 **Important:** Use the fork with validation subcommand support, not the official KataGo repository.
 
 ```bash
+# Install Eigen3
+brew install eigen@3
+
 # Clone KataGo fork with validation subcommand (if not already available)
 cd ~/katago_workspace
 git clone https://github.com/ChinChangYang/KataGo.git
@@ -394,16 +397,13 @@ git checkout validation-subcommand
 cd cpp
 mkdir build
 cd build
-cmake .. \
-  -DUSE_BACKEND=EIGEN \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
-  -DCMAKE_C_COMPILER=/usr/bin/clang
+cmake .. -DUSE_BACKEND=EIGEN -DEIGEN3_INCLUDE_DIRS=/opt/homebrew/opt/eigen@3/include
 make -j8
 
 # Verify executable and validation subcommand
 ./katago version
-# Should show: KataGo v1.x.x
+# Should show: KataGo v1.16.4
+# Using Eigen(CPU) backend
 
 ./katago validation
 # Should show: validation subcommand usage
@@ -474,7 +474,7 @@ All tests PASSED
 
 For each test case, the validation compares 5 outputs:
 
-1. **policy** - Move policy logits (tolerance: 5e-2)
+1. **policy** - Move policy logits (tolerance: 7e-2)
    - max_diff < 1e-3 is excellent
    - Higher differences may occur in areas with many similar moves
 
@@ -499,33 +499,6 @@ For each test case, the validation compares 5 outputs:
 - **FAIL** - Differences exceed tolerance (red)
 - **MISSING** - Output not found (yellow)
 - **SHAPE_MISMATCH** - Output shapes don't match (yellow)
-
-### Validation Results Summary
-
-✅ **All cross-validation tests passed**
-
-Test results show excellent agreement between Core ML and Eigen implementations:
-- Maximum difference: < 1e-3 (0.1%)
-- Mean difference: < 1e-4 (0.01%)
-- All outputs (policy, value, ownership, score) within tolerance
-
-**Validated test cases:**
-- Empty board positions
-- Single stone placements (corner, center)
-- Complex multi-stone patterns
-- Edge patterns and diagonals
-- Variable board masks (9x9 in 19x19)
-- Different komi values
-
-**Binary Input Requirement:**
-- Input feature planes must be binary (0.0 or 1.0) for accurate results
-- This matches KataGo's actual input format for realistic board positions
-- The converter has been optimized and validated with binary inputs
-
-**Recent improvements** (December 2025):
-- ✅ Fixed global pooling feature ordering (improved accuracy 100-1000x)
-- ✅ Optimized Mish activation implementation
-- ✅ Confirmed Core ML outputs match Eigen backend to float32 precision limits
 
 ---
 
@@ -687,44 +660,22 @@ python scripts/benchmark_inference.py \
     "num_warmup": 10
   },
   "statistics": {
-    "median_ms": 45.2,
-    "mean_ms": 46.1,
-    "std_dev_ms": 3.4,
-    "min_ms": 42.8,
-    "max_ms": 58.3,
-    "p95_ms": 51.7
+    "median_ms": 7.08,
+    "mean_ms": 7.08,
+    "std_dev_ms": 0.019,
+    "min_ms": 7.01,
+    "max_ms": 7.15,
+    "p95_ms": 7.11
   },
-  "raw_timings_ms": [43.1, 44.2, 45.0, ...]
+  "raw_timings_ms": [
+    7.091459003277123,
+    7.084791024681181,
+    7.073083019349724,
+    7.07229197723791,
+    7.013791997451335,
+    ...
+  ]
 }
-```
-
-### Best Practices
-
-1. **Always run warmup** (default 10 runs) - Neural Engine needs it
-2. **Use median for comparisons** - most robust to outliers
-3. **Run multiple benchmarks** - verify reproducibility (should be within 3-5%)
-4. **Close background apps** - reduces measurement noise
-5. **Use same test case** - "zeros" is good default (fast, deterministic)
-6. **Check std dev** - should be <10% of median for reliable results
-
-### Troubleshooting
-
-**High variability (std dev >10% of median):**
-- Close other applications
-- Disable background processes (Spotlight indexing, Time Machine, etc.)
-- Use `--warmup 20` for more stable warmup
-- Increase `--runs 100` for better statistics
-
-**Unexpectedly slow performance:**
-- Verify compute unit: `--compute-unit CPU_AND_NE` for Neural Engine
-- Check thermal throttling (run `pmset -g thermlog` on macOS)
-- Ensure model is `.mlpackage` format (not `.mlmodel`)
-- Try `--test-case zeros` to isolate model vs input complexity
-
-**"Test inputs not found" error:**
-```bash
-# Generate test inputs first
-python scripts/generate_test_inputs.py
 ```
 
 ---

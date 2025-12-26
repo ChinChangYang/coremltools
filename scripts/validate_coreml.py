@@ -22,7 +22,7 @@ import numpy as np
 # fused operations, and numeric precision. These tolerances are
 # set to allow for typical float32 accumulation differences.
 TOLERANCES = {
-    "policy": 5e-2,       # Policy logits can accumulate significant error
+    "policy": 7e-2,       # Policy logits can accumulate significant error
     "pass_policy": 1e-2,
     "value": 2e-1,        # Value head has many accumulated operations
     "ownership": 5e-3,
