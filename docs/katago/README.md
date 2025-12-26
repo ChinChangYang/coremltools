@@ -529,6 +529,206 @@ Test results show excellent agreement between Core ML and Eigen implementations:
 
 ---
 
+## Performance Benchmarking
+
+### Purpose
+
+The inference timing benchmark measures Core ML model performance for optimization work. Use it to:
+- **Compare models:** Evaluate different model architectures or optimization techniques
+- **Validate optimizations:** Verify that quantization, pruning, or other optimizations improve speed
+- **Profile hardware:** Understand CPU vs Neural Engine performance characteristics
+- **Track regressions:** Ensure code changes don't degrade performance
+
+### Running the Benchmark
+
+**Prerequisites:**
+```bash
+# Generate test inputs (if not already done)
+cd ~/katago_workspace/coremltools
+python scripts/generate_test_inputs.py
+```
+
+**Basic usage:**
+```bash
+# Benchmark with default settings (50 runs, Neural Engine, "zeros" test case)
+python scripts/benchmark_inference.py --model ../KataGo.mlpackage
+```
+
+**Example output:**
+```
+Loading model... Done
+Running 10 warmup iterations... Done
+Running 50 measurement iterations... Done
+
+KataGo Core ML Inference Benchmark
+==================================================
+
+Configuration:
+  Model: ../KataGo.mlpackage
+  Compute Unit: CPU_AND_NE
+  Test Case: zeros
+  Description: Empty board - simplest realistic baseline
+  Warmup Runs: 10
+  Measurement Runs: 50
+
+Results:
+--------------------------------------------------
+  Median:     45.2 ms  ← PRIMARY METRIC
+  Mean:       46.1 ms
+  Std Dev:     3.4 ms
+  Min:        42.8 ms
+  Max:        58.3 ms
+  P95:        51.7 ms
+
+Interpretation:
+  ✓ Low variability (7.5%) indicates consistent performance
+  ✓ P95 (51.7 ms) shows typical worst-case latency (+14.4%)
+  → Range: 15.5 ms (min-max spread)
+
+Recommendation for optimization work:
+  Compare MEDIAN values across runs. A change is meaningful if:
+  - Improvement > 5% (2.3 ms in this case)
+  - Reproducible across multiple benchmark runs
+```
+
+### Understanding the Metrics
+
+**Median (Primary Metric):**
+- Most representative of typical performance
+- Resistant to outliers from system background tasks
+- **Use this for comparing optimizations**
+- Example: "Quantization reduced median latency from 45.2ms to 38.1ms (15.7% faster)"
+
+**P95 (95th Percentile):**
+- Typical worst-case performance
+- Important for user experience (5% of requests will be slower)
+- Useful for understanding performance consistency
+
+**Min/Max:**
+- Min: Best possible hardware performance
+- Max: Identifies extreme outliers (system interruptions)
+- Large min-max gap suggests variable system load
+
+**Standard Deviation:**
+- Lower is better (more consistent)
+- High std dev (>10% of median) indicates unstable measurements
+- Re-run benchmark in quieter system conditions if std dev is high
+
+### Comparing Different Compute Units
+
+```bash
+# CPU only (reference baseline)
+python scripts/benchmark_inference.py \
+  --model ../KataGo.mlpackage \
+  --compute-unit CPU_ONLY
+
+# Neural Engine (Apple Silicon optimized)
+python scripts/benchmark_inference.py \
+  --model ../KataGo.mlpackage \
+  --compute-unit CPU_AND_NE
+
+# All available (CoreML decides optimal placement)
+python scripts/benchmark_inference.py \
+  --model ../KataGo.mlpackage \
+  --compute-unit ALL
+```
+
+**Expected performance (M1/M2/M3/M4 Mac):**
+- CPU_ONLY: ~150-200ms median
+- CPU_AND_NE: ~40-50ms median (3-4x faster)
+- ALL: Similar to CPU_AND_NE for this model
+
+### Advanced Usage
+
+**Compare different test cases:**
+```bash
+# Empty board (fastest, most stable)
+python scripts/benchmark_inference.py \
+  --model ../KataGo.mlpackage \
+  --test-case zeros
+
+# Complex position (realistic load)
+python scripts/benchmark_inference.py \
+  --model ../KataGo.mlpackage \
+  --test-case uniform_small
+
+# Random pattern (reproducible variety)
+python scripts/benchmark_inference.py \
+  --model ../KataGo.mlpackage \
+  --test-case random_seed_42
+```
+
+**More runs for higher confidence:**
+```bash
+# 100 runs for production benchmarks
+python scripts/benchmark_inference.py \
+  --model ../KataGo.mlpackage \
+  --runs 100
+```
+
+**JSON output for automation:**
+```bash
+# Save results for CI/CD tracking
+python scripts/benchmark_inference.py \
+  --model ../KataGo.mlpackage \
+  --format json \
+  --output benchmark_results.json
+```
+
+**JSON output format:**
+```json
+{
+  "config": {
+    "model": "../KataGo.mlpackage",
+    "compute_unit": "CPU_AND_NE",
+    "test_case": "zeros",
+    "test_description": "Empty board - simplest realistic baseline",
+    "num_runs": 50,
+    "num_warmup": 10
+  },
+  "statistics": {
+    "median_ms": 45.2,
+    "mean_ms": 46.1,
+    "std_dev_ms": 3.4,
+    "min_ms": 42.8,
+    "max_ms": 58.3,
+    "p95_ms": 51.7
+  },
+  "raw_timings_ms": [43.1, 44.2, 45.0, ...]
+}
+```
+
+### Best Practices
+
+1. **Always run warmup** (default 10 runs) - Neural Engine needs it
+2. **Use median for comparisons** - most robust to outliers
+3. **Run multiple benchmarks** - verify reproducibility (should be within 3-5%)
+4. **Close background apps** - reduces measurement noise
+5. **Use same test case** - "zeros" is good default (fast, deterministic)
+6. **Check std dev** - should be <10% of median for reliable results
+
+### Troubleshooting
+
+**High variability (std dev >10% of median):**
+- Close other applications
+- Disable background processes (Spotlight indexing, Time Machine, etc.)
+- Use `--warmup 20` for more stable warmup
+- Increase `--runs 100` for better statistics
+
+**Unexpectedly slow performance:**
+- Verify compute unit: `--compute-unit CPU_AND_NE` for Neural Engine
+- Check thermal throttling (run `pmset -g thermlog` on macOS)
+- Ensure model is `.mlpackage` format (not `.mlmodel`)
+- Try `--test-case zeros` to isolate model vs input complexity
+
+**"Test inputs not found" error:**
+```bash
+# Generate test inputs first
+python scripts/generate_test_inputs.py
+```
+
+---
+
 ## Verification Checklist
 
 Use these commands to verify your complete setup:
@@ -599,7 +799,7 @@ After completing this guide, your workspace should look like this:
 Now that you have a working Core ML model, you can:
 
 1. **Integrate into Swift applications** - Load the `.mlpackage` in Xcode for iOS/macOS apps
-2. **Run performance benchmarks** - Compare inference speed on CPU vs Neural Engine
+2. **Run performance benchmarks** - Use the benchmarking script to measure inference time and validate optimizations (see [Performance Benchmarking](#performance-benchmarking) section)
 3. **Try other models** - Convert different KataGo models from https://katagotraining.org/networks/
 4. **Validate accuracy** - Run the cross-validation tests to verify numerical correctness
 
