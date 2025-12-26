@@ -91,7 +91,7 @@ python test_inference.py
 ## Verification Checklist
 
 ```bash
-conda --version                                                    # ✓ conda 4.x.x
+conda --version                                                    # ✓ conda 24.x.x
 python --version                                                   # ✓ Python 3.11.x
 python -c "import coremltools; print(coremltools.__version__)"     # ✓ 9.0
 python -c "from coremltools.converters import katago; print('OK')" # ✓ OK
