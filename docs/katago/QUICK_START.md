@@ -24,16 +24,17 @@ git clone https://github.com/ChinChangYang/coremltools.git
 cd coremltools
 git checkout katagocoremltools
 
-# Build (30-60 minutes)
-# Note: If build fails with "ld: library 'c++' not found", use:
-# CXX=/usr/bin/clang++ CC=/usr/bin/clang make build
-make build
+# Build (30-60 seconds)
+make wheel
 
 # Activate environment
 source scripts/env_activate.sh --python=3.11
 
+# Install the wheel
+pip install build/dist/coremltools*cp311*arm64.whl
+
 # Verify
-python -c "from coremltools.converters import katago; print('OK')"
+cd ~/katago_workspace && python -c "from coremltools.converters import katago; print('OK')"
 ```
 
 ## Download Model
@@ -59,7 +60,7 @@ mlmodel.save("KataGo.mlpackage")
 print("Conversion complete!")
 EOF
 
-# Run conversion (5-10 minutes)
+# Run conversion (10-20 seconds)
 python convert_katago.py
 ```
 
@@ -90,25 +91,14 @@ python test_inference.py
 ## Verification Checklist
 
 ```bash
-conda --version                                                    # ✓ conda 24.x.x
+conda --version                                                    # ✓ conda 4.x.x
 python --version                                                   # ✓ Python 3.11.x
-python -c "import coremltools; print(coremltools.__version__)"    # ✓ 9.0
+python -c "import coremltools; print(coremltools.__version__)"     # ✓ 9.0
 python -c "from coremltools.converters import katago; print('OK')" # ✓ OK
-ls kata1-*.bin.gz                                                  # ✓ ~271MB file
+ls -lh kata1-*.bin.gz                                              # ✓ ~259MB file
 ls KataGo.mlpackage/                                               # ✓ Package directory
 python test_inference.py                                           # ✓ Test passed
 ```
-
-## Common Issues
-
-| Problem | Solution |
-|---------|----------|
-| `conda: command not found` | `source ~/.zshrc` |
-| `ld: library 'c++' not found` | `CXX=/usr/bin/clang++ CC=/usr/bin/clang make build` |
-| Build fails | `xcode-select --install` |
-| `libcoremlpython` not found | `make clean && make build` |
-| Conversion fails | Check model is v15 or v16 |
-| Slow inference | Ensure using Apple Silicon |
 
 ## File Locations
 
@@ -117,7 +107,7 @@ python test_inference.py                                           # ✓ Test pa
 ├── coremltools/                          # Repository
 │   ├── coremltools/converters/katago/    # Converter source
 │   └── envs/KataGoCoremltools-py3.11/    # Conda environment
-├── kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz  # Input model (~271MB)
+├── kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz  # Input model (~259MB)
 ├── KataGo.mlpackage/                     # Output model (~250-300MB)
 ├── convert_katago.py                     # Conversion script
 └── test_inference.py                     # Test script
@@ -127,21 +117,18 @@ python test_inference.py                                           # ✓ Test pa
 
 - See [README.md](README.md) for detailed documentation
 - See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common errors
-- See [BACKEND_INTEGRATION.md](BACKEND_INTEGRATION.md) for KataGo integration
 
 ## One-Liner Summary
 
 ```bash
 # Complete setup and conversion (run after prerequisites)
-cd ~/katago_workspace && \
+mkdir -p ~/katago_workspace && cd ~/katago_workspace && \
 git clone https://github.com/ChinChangYang/coremltools.git && \
-cd coremltools && git checkout katagocoremltools && make build && \
-source scripts/env_activate.sh --python=3.11 && cd ~/katago_workspace && \
+cd coremltools && git checkout katagocoremltools && make wheel && \
+source scripts/env_activate.sh --python=3.11 && \
+pip install build/dist/coremltools*cp311*arm64.whl && \
+cd ~/katago_workspace && \
 curl -O https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz && \
 python -c "import coremltools as ct; ct.converters.katago.convert('kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz').save('KataGo.mlpackage')" && \
 echo "Done! Model saved to KataGo.mlpackage"
 ```
-
----
-
-**Total time**: ~60-90 minutes (mostly automated build and download)
