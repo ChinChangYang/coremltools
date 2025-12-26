@@ -119,8 +119,9 @@ mkdir -p ~/katago_workspace
 cd ~/katago_workspace
 
 # Clone the coremltools fork with KataGo converter
-git clone https://github.com/ChinChangYang/coremltools.git
-cd coremltools
+# Note: Clone into "KataGoCoremltools" directory to match environment naming
+git clone https://github.com/ChinChangYang/coremltools.git KataGoCoremltools
+cd KataGoCoremltools
 
 # Switch to katagocoremltools branch
 git checkout katagocoremltools
@@ -128,7 +129,7 @@ git checkout katagocoremltools
 
 **Expected output:**
 ```
-Cloning into 'coremltools'...
+Cloning into 'KataGoCoremltools'...
 remote: Enumerating objects: done.
 remote: Counting objects: done.
 remote: Compressing objects: done.
@@ -143,7 +144,7 @@ Switched to a new branch 'katagocoremltools'
 **Verify KataGo converter exists:**
 
 ```bash
-ls coremltools/converters/katago/
+ls KataGoCoremltools/converters/katago/
 ```
 
 **Expected output:**
@@ -384,7 +385,7 @@ chmod +x convert_katago.py
 
 ```bash
 # Ensure environment is activated
-source ~/katago_workspace/coremltools/scripts/env_activate.sh --python=3.11
+source ~/katago_workspace/KataGoCoremltools/scripts/env_activate.sh --python=3.11
 
 # Run conversion
 python convert_katago.py
@@ -556,9 +557,196 @@ Inference test PASSED!
 
 ## Cross-Validation Results
 
-The converter has been validated against the KataGo C++ Eigen backend to ensure accurate conversion:
+The converter has been validated against the KataGo C++ Eigen backend to ensure accurate conversion.
 
-✅ **Cross-validation tests passed**
+### Running Cross-Validation Tests
+
+To verify the converted Core ML model produces identical outputs to the KataGo Eigen backend, you can run the cross-validation test suite.
+
+#### Prerequisites
+
+**1. Build KataGo with Eigen Backend and Validation Subcommand**
+
+The validation script compares Core ML outputs against KataGo's C++ Eigen backend. You'll need a KataGo executable built with Eigen support and the validation subcommand.
+
+**Important:** Use the fork with validation subcommand support, not the official KataGo repository.
+
+```bash
+# Clone KataGo fork with validation subcommand (if not already available)
+cd ~/katago_workspace
+git clone https://github.com/ChinChangYang/KataGo.git
+cd KataGo
+
+# Switch to validation-subcommand branch
+git checkout validation-subcommand
+
+# Build with Eigen backend (macOS)
+cd cpp
+mkdir build
+cd build
+cmake .. \
+  -DUSE_BACKEND=EIGEN \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
+  -DCMAKE_C_COMPILER=/usr/bin/clang
+make -j8
+
+# Verify executable and validation subcommand
+./katago version
+# Should show: KataGo v1.x.x
+
+./katago validation
+# Should show: validation subcommand usage
+```
+
+**2. Generate Test Inputs**
+
+The validation script requires test input files. If they don't exist yet, generate them:
+
+```bash
+cd ~/katago_workspace/KataGoCoremltools
+
+# Activate Python 3.11 environment
+source scripts/env_activate.sh --python=3.11
+
+# Generate test inputs (creates test_inputs/ directory)
+python scripts/generate_test_inputs.py
+```
+
+This creates 9 test cases with different board configurations:
+- `zeros.json` - Empty board
+- `center_stone.json` - Single stone at center
+- `corner_stone.json` - Single stone at corner
+- `edge_pattern.json` - Stones along edge
+- `diagonal_pattern.json` - Diagonal pattern
+- `komi_7_5.json` - Different komi value
+- `partial_mask_9x9.json` - 9x9 board mask
+- `random_seed_42.json` - Random position
+- `uniform_small.json` - Small uniform values
+
+#### Running the Validation
+
+```bash
+cd ~/katago_workspace/KataGoCoremltools
+
+# Ensure Python 3.11 environment is activated
+source scripts/env_activate.sh --python=3.11
+
+# Run cross-validation
+python scripts/validate_coreml.py \
+  --model-mlpackage ../KataGo.mlpackage \
+  --model-bin ../kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
+  --katago-exe ~/katago_workspace/KataGo/cpp/build/katago \
+  --test-inputs test_inputs
+```
+
+**Expected output:**
+```
+Found 9 test case(s)
+Core ML model: ../KataGo.mlpackage
+KataGo model: ../kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
+KataGo exe: ~/katago_workspace/KataGo/cpp/build/katago
+
+=== Test Case: center_stone ===
+  policy: max_diff=5.21e-04, mean_diff=4.48e-05, tol=5e-02 [PASS]
+  pass_policy: max_diff=1.11e-04, mean_diff=1.11e-04, tol=1e-02 [PASS]
+  value: max_diff=5.72e-05, mean_diff=3.42e-05, tol=2e-01 [PASS]
+  ownership: max_diff=2.30e-05, mean_diff=2.29e-06, tol=5e-03 [PASS]
+  score_value: max_diff=3.24e-05, mean_diff=1.44e-05, tol=5e-02 [PASS]
+
+... (8 more test cases)
+
+==================================================
+All tests PASSED
+```
+
+#### Understanding Results
+
+For each test case, the validation compares 5 outputs:
+
+1. **policy** - Move policy logits (tolerance: 5e-2)
+   - max_diff < 1e-3 is excellent
+   - Higher differences may occur in areas with many similar moves
+
+2. **pass_policy** - Pass move logit (tolerance: 1e-2)
+   - Single value comparison
+   - Very stable across implementations
+
+3. **value** - Game outcome predictions (tolerance: 2e-1)
+   - 3 values (win/loss/draw)
+   - Larger tolerance due to accumulated operations
+
+4. **ownership** - Territory predictions (tolerance: 5e-3)
+   - Per-intersection predictions
+   - Generally very stable
+
+5. **score_value** - Score distribution (tolerance: 5e-2)
+   - 6-bucket distribution
+   - Moderate tolerance for accumulated operations
+
+**Interpretation:**
+- **PASS** - Differences within tolerance (green)
+- **FAIL** - Differences exceed tolerance (red)
+- **MISSING** - Output not found (yellow)
+- **SHAPE_MISMATCH** - Output shapes don't match (yellow)
+
+#### Troubleshooting Validation Issues
+
+**Problem: Python version mismatch error**
+```
+symbol not found in flat namespace '_PyCMethod_New'
+Exception: Unable to load libmodelpackage
+```
+
+**Solution:** Ensure you're using the same Python version that was used to build coremltools:
+```bash
+# Use the Python 3.11 executable directly
+/path/to/KataGoCoremltools/envs/KataGoCoremltools-py3.11/bin/python scripts/validate_coreml.py ...
+
+# Or activate the environment first
+source scripts/env_activate.sh --python=3.11
+python scripts/validate_coreml.py ...
+```
+
+**Problem: KataGo executable not found**
+```
+KataGo executable not found: /path/to/katago
+```
+
+**Solution:** Build KataGo or update the path:
+```bash
+# Check if katago exists
+ls -la ~/katago_workspace/KataGo/cpp/build/katago
+
+# Or use the correct path in validation command
+python scripts/validate_coreml.py \
+  --katago-exe /correct/path/to/katago \
+  --model-mlpackage ../KataGo.mlpackage \
+  --model-bin ../kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
+  --test-inputs test_inputs
+```
+
+**Problem: Test inputs directory not found**
+```
+Error: Test inputs directory not found: test_inputs
+```
+
+**Solution:** Generate test inputs:
+```bash
+python scripts/generate_test_inputs.py
+```
+
+**Problem: Some tests FAIL**
+
+If validation tests fail:
+1. Check the max_diff values - small exceedances may be acceptable
+2. Verify the model conversion completed without errors
+3. Ensure binary inputs (0.0 or 1.0) are being used
+4. Check if the KataGo model version is supported (v15 or v16)
+
+### Validation Results Summary
+
+✅ **All cross-validation tests passed**
 
 Test results show excellent agreement between Core ML and Eigen implementations:
 - Maximum difference: < 1e-3 (0.1%)
@@ -591,21 +779,44 @@ Test results show excellent agreement between Core ML and Eigen implementations:
 
 #### Swift (iOS/macOS Applications)
 
+**Option 1: Using Auto-Generated Classes (Xcode Integration)**
+
+When you drag KataGo.mlpackage into an Xcode project, Xcode auto-generates Swift classes. However, note that the generated class names may vary. Use the programmatic approach below for more control.
+
+**Option 2: Programmatic API (Recommended)**
+
 ```swift
+import Foundation
 import CoreML
 
-// Load the model (auto-generated class from KataGo.mlpackage)
+// Load and compile the model
+let modelURL = URL(fileURLWithPath: "/path/to/KataGo.mlpackage")
+
+// Compile the model (one-time operation, or cache the compiled model)
+let compiledModelURL = try MLModel.compileModel(at: modelURL)
+
+// Load the compiled model
 let config = MLModelConfiguration()
-guard let model = try? KataGo(configuration: config) else {
-    fatalError("Failed to load KataGo model")
-}
+config.computeUnits = .all  // Use Neural Engine + GPU + CPU
+
+let model = try MLModel(contentsOf: compiledModelURL, configuration: config)
 
 // Prepare inputs with binary feature planes (matching KataGo format)
-let spatialInput = try! MLMultiArray(shape: [1, 22, 19, 19], dataType: .float32)
-let globalInput = try! MLMultiArray(shape: [1, 19], dataType: .float32)
-let inputMask = try! MLMultiArray(shape: [1, 1, 19, 19], dataType: .float32)
+let spatialInput = try MLMultiArray(shape: [1, 22, 19, 19], dataType: .float32)
+let globalInput = try MLMultiArray(shape: [1, 19], dataType: .float32)
+let inputMask = try MLMultiArray(shape: [1, 1, 19, 19], dataType: .float32)
 
-// TODO: Fill spatialInput with binary (0.0 or 1.0) board features
+// Initialize with zeros
+for i in 0..<spatialInput.count {
+    spatialInput[i] = 0.0
+}
+for i in 0..<globalInput.count {
+    globalInput[i] = 0.0
+}
+for i in 0..<inputMask.count {
+    inputMask[i] = 1.0  // All positions valid for 19x19
+}
+
 // Initialize channel 0 (valid board mask) to 1.0
 for i in 0..<19 {
     for j in 0..<19 {
@@ -613,22 +824,44 @@ for i in 0..<19 {
     }
 }
 
+// TODO: Set additional channels with binary (0.0 or 1.0) stone positions
+// spatialInput[[0, 1, row, col] as [NSNumber]] = 1.0  // Player stones
+// spatialInput[[0, 2, row, col] as [NSNumber]] = 1.0  // Opponent stones
+
+// Create input feature provider
+let inputFeatures: [String: Any] = [
+    "spatial_input": spatialInput,
+    "global_input": globalInput,
+    "input_mask": inputMask
+]
+let provider = try MLDictionaryFeatureProvider(dictionary: inputFeatures)
+
 // Run inference
-let input = KataGoInput(
-    spatial_input: spatialInput,
-    global_input: globalInput,
-    input_mask: inputMask
-)
+let output = try model.prediction(from: provider)
 
-guard let output = try? model.prediction(input: input) else {
-    fatalError("Inference failed")
+// Access outputs (using actual output layer names)
+let policyLogits = output.featureValue(for: "policy_p2_conv")?.multiArrayValue  // (1, 2, 19, 19)
+let passLogit = output.featureValue(for: "policy_pass_mul2")?.multiArrayValue   // (1, 2)
+let valueLogits = output.featureValue(for: "value_v3_bias")?.multiArrayValue    // (1, 3)
+let ownership = output.featureValue(for: "value_ownership_conv")?.multiArrayValue  // (1, 1, 19, 19)
+let scoreValue = output.featureValue(for: "value_sv3_bias")?.multiArrayValue    // (1, 6)
+
+// Use the outputs
+if let policy = policyLogits {
+    print("Policy shape: \(policy.shape)")
+    // Process policy logits (channel 0 for base policy)
 }
-
-// Access outputs
-let policy = output.policy  // MLMultiArray (1, 2, 19, 19)
-let value = output.value    // MLMultiArray (1, 3)
-let ownership = output.ownership  // MLMultiArray (1, 1, 19, 19)
 ```
+
+**Important Notes:**
+- Model must be compiled before use with `MLModel.compileModel(at:)`
+- Output names are layer names from conversion, not simplified names
+- Actual output names:
+  - `policy_p2_conv` - Policy logits (not just "policy")
+  - `policy_pass_mul2` - Pass policy logit
+  - `value_v3_bias` - Value logits (not just "value")
+  - `value_ownership_conv` - Ownership predictions
+  - `value_sv3_bias` - Score value distribution
 
 #### Python (Testing and Development)
 
@@ -657,10 +890,12 @@ result = model.predict({
     "input_mask": input_mask
 })
 
-# Access outputs
-policy = result["policy"]      # shape: (1, 2, 19, 19)
-value = result["value"]        # shape: (1, 3)
-ownership = result["ownership"]  # shape: (1, 1, 19, 19)
+# Access outputs (using actual layer names)
+policy_logits = result["policy_p2_conv"]           # shape: (1, 2, 19, 19)
+pass_logit = result["policy_pass_mul2"]            # shape: (1, 2)
+value_logits = result["value_v3_bias"]             # shape: (1, 3)
+ownership_map = result["value_ownership_conv"]     # shape: (1, 1, 19, 19)
+score_values = result["value_sv3_bias"]            # shape: (1, 6)
 ```
 
 ### 2. Input Format Details
@@ -712,7 +947,9 @@ For 19x19 boards, all values should be 1.0. This input exists to support future 
 
 ### 3. Output Format Details
 
-#### `policy` (1, 2, 19, 19) - Float32
+**Important**: The actual output names from the Core ML model are the layer names from the conversion process, not simplified names. Use these exact names when accessing outputs:
+
+#### `policy_p2_conv` (1, 2, 19, 19) - Float32
 
 Move policy logits for each board position:
 - **Channel 0**: Base move policy
@@ -720,24 +957,33 @@ Move policy logits for each board position:
 
 **Usage**: Apply softmax to get move probabilities:
 ```python
-policy_logits = result["policy"][0, 0]  # Use channel 0
+# Python
+policy_logits = result["policy_p2_conv"][0, 0]  # Use channel 0
 policy_probs = scipy.special.softmax(policy_logits.flatten())
 policy_probs = policy_probs.reshape(19, 19)
 ```
 
-Higher values indicate more likely moves. Combine with `pass_policy` for the full policy distribution.
+```swift
+// Swift
+if let policy = output.featureValue(for: "policy_p2_conv")?.multiArrayValue {
+    // Access channel 0 for base policy
+}
+```
 
-#### `pass_policy` (1, 1) - Float32
+Higher values indicate more likely moves. Combine with `policy_pass_mul2` for the full policy distribution.
 
-Logit for the "pass" move. Single scalar value.
+#### `policy_pass_mul2` (1, 2) - Float32
+
+Pass policy logits (2 values, use index 0).
 
 **Usage**: Combine with spatial policy:
 ```python
-pass_logit = result["pass_policy"][0, 0]
+# Python
+pass_logit = result["policy_pass_mul2"][0, 0]
 # Include in softmax calculation with spatial policy
 ```
 
-#### `value` (1, 3) - Float32
+#### `value_v3_bias` (1, 3) - Float32
 
 Game outcome predictions:
 - **Index 0**: Win probability for current player
@@ -746,11 +992,21 @@ Game outcome predictions:
 
 Values are logits; apply softmax to get probabilities:
 ```python
-value_probs = scipy.special.softmax(result["value"][0])
+# Python
+value_probs = scipy.special.softmax(result["value_v3_bias"][0])
 win_prob = value_probs[0]
 ```
 
-#### `ownership` (1, 1, 19, 19) - Float32
+```swift
+// Swift
+if let value = output.featureValue(for: "value_v3_bias")?.multiArrayValue {
+    let winLogit = value[0].floatValue
+    let lossLogit = value[1].floatValue
+    let drawLogit = value[2].floatValue
+}
+```
+
+#### `value_ownership_conv` (1, 1, 19, 19) - Float32
 
 Predicted final territory ownership for each intersection:
 - **Positive values**: Current player's territory
@@ -761,16 +1017,19 @@ Values typically range from -1.0 to +1.0.
 
 **Usage**: Visualize territory predictions:
 ```python
-ownership_map = result["ownership"][0, 0]
+# Python
+ownership_map = result["value_ownership_conv"][0, 0]
 # Values > 0.5: Strongly current player's territory
 # Values < -0.5: Strongly opponent's territory
 ```
 
-#### `score_value` (1, 6) - Float32
+#### `value_sv3_bias` (1, 6) - Float32
 
 Score distribution predictions (6 buckets). These represent the estimated final score after the game ends.
 
 The exact bucket ranges depend on training, but typically cover score differences from large losses to large wins.
+
+**Legacy Names**: For compatibility, Python code may use simplified output names like "policy", "value", etc., but the actual Core ML layer names are as documented above.
 
 ---
 
@@ -842,7 +1101,7 @@ gcc --version
 
 **Solution**:
 ```bash
-cd ~/katago_workspace/coremltools
+cd ~/katago_workspace/KataGoCoremltools
 make clean
 make build
 
@@ -890,27 +1149,14 @@ ls coremltools/converters/katago/_converter.py
 
 # If missing, re-clone repository
 cd ~/katago_workspace
-rm -rf coremltools
-git clone https://github.com/ChinChangYang/coremltools.git
-cd coremltools
+rm -rf KataGoCoremltools
+git clone https://github.com/ChinChangYang/coremltools.git KataGoCoremltools
+cd KataGoCoremltools
 git checkout katagocoremltools
 
 # Rebuild
 make build
 ```
-
-#### Conversion hangs or takes extremely long
-
-**Problem**: Model is very large or system is low on memory.
-
-**Solution**:
-- Close other applications to free memory
-- Use a smaller model (fewer blocks/channels)
-- Conversion time scales with model size:
-  - Small (128ch, 10b): ~2-3 minutes
-  - Medium (384ch, 20b): ~4-6 minutes
-  - Large (512ch, 28b): ~6-10 minutes
-  - Extra large (512ch, 40b): ~10-15 minutes
 
 ### Runtime Issues
 
@@ -920,7 +1166,7 @@ make build
 
 **Solution**:
 ```bash
-cd ~/katago_workspace/coremltools
+cd ~/katago_workspace/KataGoCoremltools
 
 # Clean and rebuild
 make clean
@@ -933,55 +1179,6 @@ source scripts/env_activate.sh --python=3.11
 ls coremltools/libcoremlpython.so
 ls coremltools/libmilstoragepython.so
 ```
-
-#### `MLModelError: Failed to load model`
-
-**Problem**: .mlpackage is corrupted or incompatible.
-
-**Solution**:
-```bash
-# Remove and reconvert
-rm -rf KataGo.mlpackage
-python convert_katago.py
-
-# Verify package structure
-ls -R KataGo.mlpackage/
-```
-
-#### Memory errors during inference
-
-**Problem**: Insufficient RAM for model.
-
-**Solution**:
-- Close other applications
-- Use a smaller model
-- Check Activity Monitor for memory pressure
-- Typical memory usage:
-  - Model load: ~500MB-1GB
-  - Inference: ~300MB-600MB additional
-  - Total: ~1-2GB for typical models
-
-#### Inference is very slow
-
-**Problem**: Not using Neural Engine or optimizations disabled.
-
-**Potential causes**:
-```python
-# Check compute units
-mlmodel = ct.models.MLModel("KataGo.mlpackage")
-print(mlmodel.compute_unit)
-
-# Should use Neural Engine on Apple Silicon
-# If using CPU_ONLY, performance will be slower
-
-# For best performance on Apple Silicon:
-mlmodel = ct.models.MLModel(
-    "KataGo.mlpackage",
-    compute_units=ct.ComputeUnit.ALL  # Uses Neural Engine + GPU + CPU
-)
-```
-
-**Note:** Inference performance varies by hardware, model size, and compute unit configuration. The model will automatically use available acceleration (Neural Engine, GPU, or CPU) based on the system capabilities.
 
 ---
 
@@ -1015,15 +1212,15 @@ git --version
 # ✓ Should show: git version 2.x.x or later
 
 # 3. Check repository location
-ls ~/katago_workspace/coremltools
-# ✓ Should show coremltools directory contents
+ls ~/katago_workspace/KataGoCoremltools
+# ✓ Should show KataGoCoremltools directory contents
 
 # 4. Check KataGo converter files
-ls ~/katago_workspace/coremltools/coremltools/converters/katago/
+ls ~/katago_workspace/KataGoCoremltools/coremltools/converters/katago/
 # ✓ Should show: __init__.py, _converter.py, _katago_parser.py, etc.
 
 # 5. Activate conda environment
-cd ~/katago_workspace/coremltools
+cd ~/katago_workspace/KataGoCoremltools
 source scripts/env_activate.sh --python=3.11
 
 # 6. Check Python version
