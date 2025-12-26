@@ -573,21 +573,21 @@ Configuration:
 
 Results:
 --------------------------------------------------
-  Median:     45.2 ms  ← PRIMARY METRIC
-  Mean:       46.1 ms
-  Std Dev:     3.4 ms
-  Min:        42.8 ms
-  Max:        58.3 ms
-  P95:        51.7 ms
+  Median:       7.0 ms  ← PRIMARY METRIC
+  Mean:         7.0 ms
+  Std Dev:      0.0 ms
+  Min:          7.0 ms
+  Max:          7.1 ms
+  P95:          7.1 ms
 
 Interpretation:
-  ✓ Low variability (7.5%) indicates consistent performance
-  ✓ P95 (51.7 ms) shows typical worst-case latency (+14.4%)
-  → Range: 15.5 ms (min-max spread)
+  ✓ Low variability (0.6%) indicates consistent performance
+  ✓ P95 (7.1 ms) shows typical worst-case latency (+1.0%)
+  → Range: 0.1 ms (min-max spread)
 
 Recommendation for optimization work:
   Compare MEDIAN values across runs. A change is meaningful if:
-  - Improvement > 5% (2.3 ms in this case)
+  - Improvement > 5% (0.4 ms in this case)
   - Reproducible across multiple benchmark runs
 ```
 
