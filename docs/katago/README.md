@@ -246,7 +246,8 @@ import sys, coremltools as ct
 
 mlmodel = ct.converters.katago.convert(
     "kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz",
-    minimum_deployment_target=ct.target.iOS15
+    minimum_deployment_target=ct.target.iOS18,
+    compute_precision=ct.precision.FLOAT16
 )
 mlmodel.save("KataGo.mlpackage")
 print("Conversion complete!")
@@ -259,7 +260,7 @@ ls -l convert_katago.py
 # Should show: -rw-r--r--  1 user  staff  xxx Dec 26 10:00 convert_katago.py
 ```
 
-The script uses `minimum_deployment_target=ct.target.iOS15` to ensure maximum compatibility with devices running iOS 15 or later, and macOS 12 or later.
+The script uses `minimum_deployment_target=ct.target.iOS18` for best performance (1.4% faster than iOS15) while maintaining compatibility with devices running iOS 18 or later, and macOS 15 or later. For maximum device compatibility, use `ct.target.iOS15`.
 
 ### Run Conversion
 
@@ -296,6 +297,62 @@ The `.mlpackage` is a directory bundle containing:
 - **Data/com.apple.CoreML/weights/weight.bin** - Neural network weights
 
 If you see these files and the size is reasonable (250-300MB), the conversion was successful!
+
+---
+
+## Performance Optimization
+
+### Recommended Configuration
+
+For best performance on full 19x19 boards:
+
+```python
+import coremltools as ct
+
+mlmodel = ct.converters.katago.convert(
+    "kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz",
+    minimum_deployment_target=ct.target.iOS18,
+    compute_precision=ct.precision.FLOAT16,
+    eliminate_identity_mask=True  # 6.5% speedup
+)
+mlmodel.save("KataGo.mlpackage")
+```
+
+**Performance**: ~6.7ms median (M1/M2/M3 Mac), 6.5% faster than baseline
+
+**Important**: `eliminate_identity_mask=True` only works for full 19x19 boards. For partial boards or variable sizes, set to `False`.
+
+### Alternative: Partial Board Support
+
+For partial boards or variable board sizes:
+
+```python
+import coremltools as ct
+
+mlmodel = ct.converters.katago.convert(
+    "kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz",
+    minimum_deployment_target=ct.target.iOS18,
+    compute_precision=ct.precision.FLOAT16,
+    eliminate_identity_mask=False
+)
+mlmodel.save("KataGo.mlpackage")
+```
+
+**Performance**: ~7.1ms median, 1.4% faster than iOS15 baseline
+
+### Optimization Details
+
+Based on systematic experiments (see `docs/optimization_summary.md`):
+- **iOS18**: 1.4% speedup with full compatibility
+- **eliminate_identity_mask**: 6.5% speedup by eliminating mask operations
+- **FLOAT16**: Best balance of speed and accuracy for Neural Engine
+
+Tested and rejected alternatives:
+- Softplus/SiLU Mish variants (failed validation or slower)
+- Fused linear operations (minimal 0.7% gain, added complexity)
+- Custom pass pipelines (no measurable impact)
+
+For detailed experimental results, see [`docs/optimization_summary.md`](optimization_summary.md).
 
 ---
 

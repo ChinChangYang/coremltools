@@ -1,0 +1,307 @@
+{
+  "baseline": {
+    "id": "baseline",
+    "name": "Baseline (current KataGo mish + iOS15 + FLOAT16)",
+    "config": {
+      "mish_implementation": "original",
+      "minimum_deployment_target": "iOS15",
+      "compute_precision": "FLOAT16"
+    },
+    "results": {
+      "median_ms": 7.189,
+      "mean_ms": 7.207,
+      "std_dev_ms": 0.091,
+      "min_ms": 7.07,
+      "max_ms": 7.631,
+      "p95_ms": 7.344
+    },
+    "validation": "PASS - all 9 test cases passed"
+  },
+  "experiments": [
+    {
+      "id": "baseline_float32",
+      "name": "Baseline + FLOAT32 (accuracy reference)",
+      "config": {
+        "mish_implementation": "original",
+        "minimum_deployment_target": "iOS15",
+        "compute_precision": "FLOAT32"
+      },
+      "results": {
+        "median_ms": 53.162,
+        "mean_ms": 53.253,
+        "std_dev_ms": 1.247,
+        "min_ms": 51.012,
+        "max_ms": 64.179,
+        "p95_ms": 53.782
+      },
+      "validation": "PASS - all 9 test cases passed (higher accuracy than FLOAT16)",
+      "accuracy_risk": "NONE",
+      "notes": "Accuracy reference - 7.4x slower than FLOAT16 baseline"
+    },
+    {
+      "id": "mish_softplus_float16",
+      "name": "Mish: softplus+tanh + FLOAT16",
+      "config": {
+        "mish_implementation": "softplus",
+        "minimum_deployment_target": "iOS15",
+        "compute_precision": "FLOAT16"
+      },
+      "results": {
+        "median_ms": 7.233,
+        "mean_ms": 7.271,
+        "std_dev_ms": 0.123,
+        "min_ms": 7.138,
+        "max_ms": 7.808,
+        "p95_ms": 7.518
+      },
+      "validation": "FAIL - ownership exceeded threshold (5.08e-3 vs 5e-3 tolerance)",
+      "accuracy_risk": "HIGH - known issue #2359",
+      "notes": "Slightly slower than baseline (0.6%) and fails validation due to FP16 accuracy issues"
+    },
+    {
+      "id": "mish_softplus_float32",
+      "name": "Mish: softplus+tanh + FLOAT32",
+      "config": {
+        "mish_implementation": "softplus",
+        "minimum_deployment_target": "iOS15",
+        "compute_precision": "FLOAT32"
+      },
+      "results": {
+        "median_ms": 68.492,
+        "mean_ms": 68.546,
+        "std_dev_ms": 0.728,
+        "min_ms": 67.101,
+        "max_ms": 73.829,
+        "p95_ms": 69.544
+      },
+      "validation": "PASS - all 9 test cases passed",
+      "accuracy_risk": "LOW",
+      "notes": "29% slower than FLOAT32 baseline (68.5ms vs 53.2ms) - softplus+tanh is less efficient"
+    },
+    {
+      "id": "mish_silu_float16",
+      "name": "Mish: SiLU + FLOAT16",
+      "config": {
+        "mish_implementation": "silu",
+        "minimum_deployment_target": "iOS15",
+        "compute_precision": "FLOAT16"
+      },
+      "results": {
+        "median_ms": 5.75,
+        "mean_ms": 5.765,
+        "std_dev_ms": 0.082,
+        "min_ms": 5.643,
+        "max_ms": 6.045,
+        "p95_ms": 5.918
+      },
+      "validation": "FAIL - all outputs failed (max_diff up to 8.6, expected < 0.07)",
+      "accuracy_risk": "VERY HIGH - approximation + FP16",
+      "notes": "20% faster than baseline BUT completely fails validation - SiLU is not Mish"
+    },
+    {
+      "id": "mish_silu_float32",
+      "name": "Mish: SiLU + FLOAT32",
+      "config": {
+        "mish_implementation": "silu",
+        "minimum_deployment_target": "iOS15",
+        "compute_precision": "FLOAT32"
+      },
+      "results": {
+        "median_ms": 47.947,
+        "mean_ms": 47.774,
+        "std_dev_ms": 0.773,
+        "min_ms": 45.345,
+        "max_ms": 49.736,
+        "p95_ms": 48.964
+      },
+      "validation": "FAIL - all outputs failed (SiLU is not mathematically equivalent to Mish)",
+      "accuracy_risk": "HIGH - approximation",
+      "notes": "10% faster than FLOAT32 baseline (47.9ms vs 53.2ms) but fails validation"
+    },
+    {
+      "id": "ios18_original",
+      "name": "iOS 18 deployment target (original mish)",
+      "config": {
+        "mish_implementation": "original",
+        "minimum_deployment_target": "iOS18",
+        "compute_precision": "FLOAT16"
+      },
+      "results": {
+        "median_ms": 7.087,
+        "mean_ms": 7.094,
+        "std_dev_ms": 0.046,
+        "min_ms": 7.011,
+        "max_ms": 7.301,
+        "p95_ms": 7.176
+      },
+      "validation": "PASS - all 9 test cases passed",
+      "accuracy_risk": "LOW",
+      "notes": "1.4% faster than baseline (7.09ms vs 7.19ms) - BEST VALIDATED OPTION"
+    },
+    {
+      "id": "fused_linear",
+      "name": "Fused linear operations (iOS15)",
+      "config": {
+        "mish_implementation": "original",
+        "minimum_deployment_target": "iOS15",
+        "compute_precision": "FLOAT16",
+        "use_fused_linear": true
+      },
+      "results": {
+        "median_ms": 7.141,
+        "mean_ms": 7.153,
+        "std_dev_ms": 0.071,
+        "min_ms": 7.029,
+        "max_ms": 7.38,
+        "p95_ms": 7.274
+      },
+      "validation": "PASS - all 9 test cases passed",
+      "accuracy_risk": "LOW",
+      "notes": "0.7% faster than baseline (7.14ms vs 7.19ms)"
+    },
+    {
+      "id": "combined_ios18_fused",
+      "name": "Combined: iOS18 + fused linear",
+      "config": {
+        "mish_implementation": "original",
+        "minimum_deployment_target": "iOS18",
+        "compute_precision": "FLOAT16",
+        "use_fused_linear": true
+      },
+      "results": {
+        "median_ms": 7.235,
+        "mean_ms": 7.27,
+        "std_dev_ms": 0.139,
+        "min_ms": 7.073,
+        "max_ms": 7.9,
+        "p95_ms": 7.524
+      },
+      "validation": "PASS - all 9 test cases passed",
+      "accuracy_risk": "LOW",
+      "notes": "0.6% SLOWER than baseline - optimizations don't compound well"
+    },
+    {
+      "id": "skip_irrelevant_passes",
+      "name": "Skip irrelevant passes (GELU, PReLU, LayerNorm)",
+      "config": {
+        "mish_implementation": "original",
+        "minimum_deployment_target": "iOS15",
+        "compute_precision": "FLOAT16",
+        "pass_pipeline": "skip_irrelevant"
+      },
+      "results": {
+        "median_ms": 7.144,
+        "mean_ms": 7.153,
+        "std_dev_ms": 0.076,
+        "min_ms": 7.034,
+        "max_ms": 7.620,
+        "p95_ms": 7.277
+      },
+      "validation": "PASS - all 9 test cases passed",
+      "accuracy_risk": "LOW",
+      "notes": "Remove 5 irrelevant fusion passes - 0.6% slower than baseline (within noise)"
+    },
+    {
+      "id": "aggressive_const_elim",
+      "name": "Aggressive const elimination (10MB threshold)",
+      "config": {
+        "mish_implementation": "original",
+        "minimum_deployment_target": "iOS15",
+        "compute_precision": "FLOAT16",
+        "pass_pipeline": "aggressive_const_elimination"
+      },
+      "results": {
+        "median_ms": 7.115,
+        "mean_ms": 7.112,
+        "std_dev_ms": 0.030,
+        "min_ms": 7.048,
+        "max_ms": 7.188,
+        "p95_ms": 7.168
+      },
+      "validation": "PASS - all 9 test cases passed",
+      "accuracy_risk": "LOW",
+      "notes": "Increase const_elimination threshold to 10MB - 1.0% faster than baseline (within noise)"
+    },
+    {
+      "id": "optimized_fusion_order",
+      "name": "Optimized fusion pass order",
+      "config": {
+        "mish_implementation": "original",
+        "minimum_deployment_target": "iOS15",
+        "compute_precision": "FLOAT16",
+        "pass_pipeline": "optimized_fusion_order"
+      },
+      "results": {
+        "median_ms": 7.193,
+        "mean_ms": 7.220,
+        "std_dev_ms": 0.109,
+        "min_ms": 7.064,
+        "max_ms": 7.750,
+        "p95_ms": 7.406
+      },
+      "validation": "PASS - all 9 test cases passed",
+      "accuracy_risk": "LOW",
+      "notes": "Add extra early conv/batchnorm fusion pass - 0.1% slower than baseline (essentially identical)"
+    },
+    {
+      "id": "mask_elimination",
+      "name": "Identity mask elimination (fixed 19x19 board)",
+      "config": {
+        "mish_implementation": "original",
+        "minimum_deployment_target": "iOS15",
+        "compute_precision": "FLOAT16",
+        "eliminate_identity_mask": true
+      },
+      "results": {
+        "median_ms": 6.721,
+        "mean_ms": 6.732,
+        "std_dev_ms": 0.070,
+        "min_ms": 6.594,
+        "max_ms": 7.043,
+        "p95_ms": 6.853
+      },
+      "validation": "PASS - 8 of 9 test cases passed (partial_mask_9x9 fails as expected)",
+      "accuracy_risk": "LOW - only for full 19x19 boards",
+      "notes": "6.5% faster than baseline (6.72ms vs 7.19ms) - BEST OVERALL PERFORMANCE. Eliminates mask operations by precomputing mask-derived constants (mask_sum=361, sqrt_s14_m01=0.5, sq_s01=0.15). Only valid for full board inference (all mask values = 1.0). Incompatible with partial boards."
+    }
+  ],
+  "summary": {
+    "best_validated_config": {
+      "id": "mask_elimination",
+      "config": {
+        "mish_implementation": "original",
+        "minimum_deployment_target": "iOS15",
+        "compute_precision": "FLOAT16",
+        "eliminate_identity_mask": true
+      },
+      "median_ms": 6.721,
+      "improvement_vs_baseline": "6.5%"
+    },
+    "second_best_validated_config": {
+      "id": "ios18_original",
+      "config": {
+        "mish_implementation": "original",
+        "minimum_deployment_target": "iOS18",
+        "compute_precision": "FLOAT16",
+        "use_fused_linear": false
+      },
+      "median_ms": 7.087,
+      "improvement_vs_baseline": "1.4%"
+    },
+    "conclusions": [
+      "Original Mish (6-op exp-based) performs well and passes all validation",
+      "softplus+tanh Mish fails validation with FLOAT16 due to Neural Engine precision issues (issue #2359)",
+      "softplus+tanh Mish is actually 29% SLOWER than original in FLOAT32 mode",
+      "SiLU provides 20% speedup but completely fails validation - it's a different activation function",
+      "iOS18 deployment target provides 1.4% speedup while maintaining accuracy",
+      "Fused linear provides 0.7% speedup while maintaining accuracy",
+      "Combining iOS18 + fused linear is actually slower than iOS18 alone",
+      "Phase 4 low-priority optimizations (skip irrelevant passes, aggressive const elimination, optimized fusion order) showed no meaningful performance impact (all within measurement noise)",
+      "Mask elimination (Experiment 10) provides the BEST performance improvement at 6.5% speedup (6.72ms vs 7.19ms baseline)",
+      "Mask elimination works by precomputing mask-derived constants and eliminating mask multiplications",
+      "Mask elimination is ONLY valid for full 19x19 board inference - incompatible with partial boards",
+      "The baseline implementation is already well-optimized for Neural Engine, but mask operations are a significant overhead that can be eliminated for fixed board sizes"
+    ],
+    "recommendation": "For full 19x19 board inference: Use mask elimination (eliminate_identity_mask=True) for 6.5% speedup. For variable board sizes or partial boards: Use iOS18 deployment target with original mish implementation for 1.4% speedup."
+  }
+}

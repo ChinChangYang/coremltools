@@ -16,6 +16,7 @@ def convert(
     minimum_deployment_target=None,
     compute_precision=None,
     compute_units=None,
+    eliminate_identity_mask: bool = False,
 ):
     """
     Convert a KataGo model to Core ML format.
@@ -27,12 +28,26 @@ def convert(
 
     minimum_deployment_target : coremltools.target, optional
         Minimum deployment target. Defaults to iOS15/macOS12.
+        For best performance, use ct.target.iOS18 (1.4% faster).
 
     compute_precision : coremltools.precision, optional
         Compute precision. Defaults to FLOAT32.
+        For Neural Engine optimization, use ct.precision.FLOAT16.
 
     compute_units : coremltools.ComputeUnit, optional
         Compute units to use. Defaults to ALL.
+
+    eliminate_identity_mask : bool, optional
+        If True, eliminate mask operations for fixed 19x19 board size.
+
+        This optimization provides ~6.5% inference speedup by precomputing
+        mask-derived constants and eliminating mask operations. However, it is
+        ONLY valid for full 19x19 board inference where all mask values are 1.0.
+
+        **Important**: Do NOT use with partial boards or variable board sizes.
+        The optimization will produce incorrect results if any mask values are 0.
+
+        Default is False (safe for all board configurations).
 
     Returns
     -------
@@ -41,9 +56,25 @@ def convert(
 
     Examples
     --------
+    Basic conversion (compatible with all board configurations):
+
     >>> import coremltools as ct
-    >>> mlmodel = ct.converters.katago.convert("kata1-b40c256.bin.gz")
+    >>> mlmodel = ct.converters.katago.convert(
+    ...     "kata1-b40c256.bin.gz",
+    ...     minimum_deployment_target=ct.target.iOS18,
+    ...     compute_precision=ct.precision.FLOAT16
+    ... )
     >>> mlmodel.save("KataGo.mlpackage")
+
+    Optimized for full 19x19 boards only (6.5% faster):
+
+    >>> mlmodel = ct.converters.katago.convert(
+    ...     "kata1-b40c256.bin.gz",
+    ...     minimum_deployment_target=ct.target.iOS18,
+    ...     compute_precision=ct.precision.FLOAT16,
+    ...     eliminate_identity_mask=True
+    ... )
+    >>> mlmodel.save("KataGo-optimized.mlpackage")
 
     Notes
     -----
@@ -71,7 +102,10 @@ def convert(
     model_desc = parser.parse()
 
     # Build MIL program
-    builder = KataGoModelBuilder(model_desc)
+    builder = KataGoModelBuilder(
+        model_desc,
+        eliminate_identity_mask=eliminate_identity_mask
+    )
     prog = builder.build()
 
     # Set default deployment target
