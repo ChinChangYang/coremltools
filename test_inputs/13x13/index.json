@@ -1,0 +1,18 @@
+{
+  "description": "KataGo to Core ML cross-validation test inputs",
+  "board_x_size": 13,
+  "board_y_size": 13,
+  "num_spatial_channels": 22,
+  "num_global_channels": 19,
+  "test_cases": [
+    "zeros",
+    "random_seed_42",
+    "corner_stone",
+    "center_stone",
+    "partial_mask_6x6",
+    "edge_pattern",
+    "diagonal_pattern",
+    "uniform_small",
+    "komi_7_5"
+  ]
+}
