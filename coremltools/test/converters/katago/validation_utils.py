@@ -151,7 +151,13 @@ def run_eigen_backend(
         Dictionary of output arrays, or None if execution failed
     """
     # Convert inputs to JSON format (remove batch dimension for JSON)
+    # Extract board dimensions from input shapes
+    spatial_shape = inputs["spatial"].shape  # [1, C, H, W]
+    board_y_size, board_x_size = spatial_shape[2], spatial_shape[3]
+
     input_json = {
+        "boardXSize": int(board_x_size),       # Explicit board width
+        "boardYSize": int(board_y_size),       # Explicit board height
         "spatial_input": inputs["spatial"].squeeze(0).tolist(),  # [C, H, W]
         "global_input": inputs["global"].squeeze(0).tolist(),  # [G]
         "input_mask": inputs["mask"].squeeze(0).squeeze(0).tolist(),  # [H, W]
