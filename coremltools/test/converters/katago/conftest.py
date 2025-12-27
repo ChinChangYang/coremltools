@@ -21,7 +21,7 @@ def katago_model_bin():
         If the KataGo model binary is not found
     """
     # Look for model in katago_eigen directory
-    model_path = Path(__file__).parent.parent.parent.parent / "katago_eigen" / "kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz"
+    model_path = Path(__file__).parent.parent.parent.parent.parent / "KataGo" / "kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz"
 
     if not model_path.exists():
         pytest.skip(f"KataGo model not found: {model_path}")
@@ -40,7 +40,7 @@ def katago_executable():
         If the KataGo executable is not found
     """
     # Look for executable in katago_eigen/cpp/build directory
-    exe_path = Path(__file__).parent.parent.parent.parent / "katago_eigen" / "cpp" / "build" / "katago"
+    exe_path = Path(__file__).parent.parent.parent.parent.parent / "KataGo" / "cpp" / "build" / "katago"
 
     if not exe_path.exists():
         pytest.skip(f"KataGo executable not found: {exe_path}")
@@ -129,7 +129,7 @@ def test_inputs_dir(board_size):
     Skips:
         If the test inputs directory doesn't exist for this board size
     """
-    test_dir = Path(__file__).parent.parent.parent.parent / "test_inputs" / f"{board_size}x{board_size}"
+    test_dir = Path(__file__).parent.parent.parent.parent.parent / "test_inputs" / f"{board_size}x{board_size}"
 
     if not test_dir.exists():
         pytest.skip(

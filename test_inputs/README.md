@@ -111,13 +111,45 @@ Where:
 
 ## Using Test Inputs
 
+### Build KataGo with Eigen Backend and Validation Subcommand
+
+```bash
+git clone https://github.com/ChinChangYang/KataGo.git
+cd KataGo
+
+# Switch to validation-subcommand branch
+git checkout validation-subcommand
+
+# Build with Eigen backend (macOS)
+cd cpp
+mkdir build
+cd build
+cmake .. -DUSE_BACKEND=EIGEN -DEIGEN3_INCLUDE_DIRS=/opt/homebrew/opt/eigen@3/include/eigen3
+make -j8
+
+# Verify executable and validation subcommand
+./katago version
+# Should show: KataGo v1.16.4
+# Using Eigen(CPU) backend
+
+./katago validation
+# Should show: validation subcommand usage
+```
+
+### Download a KataGo Model
+
+```bash
+curl -O https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
+mv kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz KataGo/
+```
+
 ### Cross-Validation Script
 
 ```bash
 python scripts/validate_coreml.py \
     --model-mlpackage KataGo-9x9.mlpackage \
-    --model-bin katago_eigen/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
-    --katago-exe katago_eigen/cpp/build/katago \
+    --model-bin kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
+    --katago-exe KataGo/cpp/build/katago \
     --test-inputs test_inputs/9x9
 ```
 

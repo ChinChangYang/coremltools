@@ -486,7 +486,7 @@ git checkout validation-subcommand
 cd cpp
 mkdir build
 cd build
-cmake .. -DUSE_BACKEND=EIGEN -DEIGEN3_INCLUDE_DIRS=/opt/homebrew/opt/eigen@3/include
+cmake .. -DUSE_BACKEND=EIGEN -DEIGEN3_INCLUDE_DIRS=/opt/homebrew/opt/eigen@3/include/eigen3
 make -j8
 
 # Verify executable and validation subcommand
@@ -537,16 +537,16 @@ source scripts/env_activate.sh --python=3.11
 # Run cross-validation
 python scripts/validate_coreml.py \
   --model-mlpackage ../KataGo.mlpackage \
-  --model-bin ../kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
+  --model-bin ~/katago_workspace/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
   --katago-exe ~/katago_workspace/KataGo/cpp/build/katago \
-  --test-inputs test_inputs
+  --test-inputs test_inputs/19x19
 ```
 
 **Expected output:**
 ```
 Found 9 test case(s)
 Core ML model: ../KataGo.mlpackage
-KataGo model: ../kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
+KataGo model: ~/katago_workspace/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
 KataGo exe: ~/katago_workspace/KataGo/cpp/build/katago
 
 === Test Case: center_stone ===
