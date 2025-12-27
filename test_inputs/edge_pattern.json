@@ -1,6 +1,6 @@
 {
   "name": "edge_pattern",
-  "description": "Alternating stones along top edge",
+  "description": "Alternating stones along top edge (19x19)",
   "spatial_input": [
     [
       [

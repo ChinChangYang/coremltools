@@ -1,6 +1,6 @@
 {
   "name": "corner_stone",
-  "description": "Single player stone at corner (0,0)",
+  "description": "Single player stone at corner (0,0) on 19x19 board",
   "spatial_input": [
     [
       [

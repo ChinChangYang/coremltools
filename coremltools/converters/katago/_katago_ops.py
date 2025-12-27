@@ -31,27 +31,34 @@ class KataGoOps:
     Provides methods to convert KataGo layer descriptors to MIL operations.
     """
 
-    BOARD_SIZE = 19
-
-    def __init__(self, eliminate_identity_mask: bool = False):
+    def __init__(
+        self,
+        board_x_size: int = 19,
+        board_y_size: int = 19,
+        eliminate_identity_mask: bool = False,
+    ):
         """
         Initialize the KataGoOps builder.
 
         Args:
+            board_x_size: Board width (number of columns). Must be in range [2, 37].
+            board_y_size: Board height (number of rows). Must be in range [2, 37].
             eliminate_identity_mask: If True, eliminate mask operations for fixed board size.
-                When the board size exactly matches BOARD_SIZE (19x19), all mask values are 1.0,
-                so mask multiplications and mask_sum computations can be eliminated/precomputed.
+                When the mask covers the full board (all mask values are 1.0),
+                mask multiplications and mask_sum computations can be eliminated/precomputed.
                 This optimization provides ~6.5% inference speedup but is only valid for
-                full 19x19 board inference. Do not use with partial boards or variable sizes.
+                full board inference. Do not use with partial boards.
         """
+        self.board_x_size = board_x_size
+        self.board_y_size = board_y_size
         self.eliminate_identity_mask = eliminate_identity_mask
 
-        # Precompute mask-derived constants for 19x19 board
+        # Precompute mask-derived constants for full board
         if self.eliminate_identity_mask:
-            self.mask_sum_constant = float(self.BOARD_SIZE * self.BOARD_SIZE)  # 361.0
-            sqrt_mask_sum = np.sqrt(self.mask_sum_constant)  # 19.0
-            self.mask_sum_sqrt_s14_m01_constant = (sqrt_mask_sum - 14.0) * 0.1  # 0.5
-            self.mask_sum_sqrt_s14_m01_sq_s01_constant = (self.mask_sum_sqrt_s14_m01_constant ** 2) - 0.1  # 0.15
+            self.mask_sum_constant = float(self.board_x_size * self.board_y_size)
+            sqrt_mask_sum = np.sqrt(self.mask_sum_constant)
+            self.mask_sum_sqrt_s14_m01_constant = (sqrt_mask_sum - 14.0) * 0.1
+            self.mask_sum_sqrt_s14_m01_sq_s01_constant = (self.mask_sum_sqrt_s14_m01_constant ** 2) - 0.1
 
     def build_conv(self, x, layer: ConvLayerDesc, name: str):
         """

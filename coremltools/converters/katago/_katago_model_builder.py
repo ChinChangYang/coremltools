@@ -33,22 +33,34 @@ class KataGoModelBuilder:
     be converted to Core ML format.
     """
 
-    BOARD_SIZE = 19
-
-    def __init__(self, model_desc: KataGoModelDesc, eliminate_identity_mask: bool = False):
+    def __init__(
+        self,
+        model_desc: KataGoModelDesc,
+        board_x_size: int = 19,
+        board_y_size: int = 19,
+        eliminate_identity_mask: bool = False,
+    ):
         """
         Initialize the model builder.
 
         Args:
             model_desc: Parsed KataGo model description.
+            board_x_size: Board width (number of columns). Must be in range [2, 37].
+            board_y_size: Board height (number of rows). Must be in range [2, 37].
             eliminate_identity_mask: If True, eliminate mask operations for fixed board size.
-                When the board size exactly matches BOARD_SIZE (19x19), all mask values are 1.0,
-                so mask multiplications and mask_sum computations can be eliminated/precomputed.
+                When the mask covers the full board (all mask values are 1.0),
+                mask multiplications and mask_sum computations can be eliminated/precomputed.
                 This optimization provides ~6.5% inference speedup but is only valid for
-                full 19x19 board inference. Do not use with partial boards or variable sizes.
+                full board inference. Do not use with partial boards.
         """
         self.model_desc = model_desc
-        self.ops = KataGoOps(eliminate_identity_mask=eliminate_identity_mask)
+        self.board_x_size = board_x_size
+        self.board_y_size = board_y_size
+        self.ops = KataGoOps(
+            board_x_size=board_x_size,
+            board_y_size=board_y_size,
+            eliminate_identity_mask=eliminate_identity_mask,
+        )
 
     def build(self):
         """
@@ -60,11 +72,11 @@ class KataGoModelBuilder:
         num_input_ch = self.model_desc.num_input_channels
         num_global_ch = self.model_desc.num_input_global_channels
 
-        # Define input specs
+        # Define input specs using configured board dimensions
         input_specs = [
-            mb.TensorSpec(shape=(1, num_input_ch, self.BOARD_SIZE, self.BOARD_SIZE), dtype=types.fp32),
+            mb.TensorSpec(shape=(1, num_input_ch, self.board_y_size, self.board_x_size), dtype=types.fp32),
             mb.TensorSpec(shape=(1, num_global_ch), dtype=types.fp32),
-            mb.TensorSpec(shape=(1, 1, self.BOARD_SIZE, self.BOARD_SIZE), dtype=types.fp32),
+            mb.TensorSpec(shape=(1, 1, self.board_y_size, self.board_x_size), dtype=types.fp32),
         ]
 
         # Build the program using decorator

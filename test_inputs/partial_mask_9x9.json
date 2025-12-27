@@ -1,6 +1,6 @@
 {
   "name": "partial_mask_9x9",
-  "description": "9x9 board mask in top-left corner",
+  "description": "9x9 board mask in top-left corner of 19x19 board",
   "spatial_input": [
     [
       [

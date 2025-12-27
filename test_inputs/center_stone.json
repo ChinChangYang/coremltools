@@ -1,6 +1,6 @@
 {
   "name": "center_stone",
-  "description": "Single player stone at center (9,9)",
+  "description": "Single player stone at center (9,9) on 19x19 board",
   "spatial_input": [
     [
       [

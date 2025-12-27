@@ -204,7 +204,7 @@ If you see "OK", the KataGo converter is successfully installed and ready to use
 **Model details:**
 - **Version**: 15 (fully supported by the converter)
 - **Architecture**: 28 nested bottleneck blocks, 512 channels
-- **Board size**: 19x19 (only size currently supported)
+- **Board size**: Any size from 2x2 to 37x37 (configured at conversion time)
 - **File size**: ~259MB compressed
 
 ```bash
@@ -304,13 +304,15 @@ If you see these files and the size is reasonable (250-300MB), the conversion wa
 
 ### Recommended Configuration
 
-For best performance on full 19x19 boards:
+For best performance on full boards with no partial masking:
 
 ```python
 import coremltools as ct
 
 mlmodel = ct.converters.katago.convert(
     "kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz",
+    board_x_size=19,  # Width (default: 19)
+    board_y_size=19,  # Height (default: 19)
     minimum_deployment_target=ct.target.iOS18,
     compute_precision=ct.precision.FLOAT16,
     eliminate_identity_mask=True  # 6.5% speedup
@@ -320,11 +322,41 @@ mlmodel.save("KataGo.mlpackage")
 
 **Performance**: ~6.7ms median (M1/M2/M3 Mac), 6.5% faster than baseline
 
-**Important**: `eliminate_identity_mask=True` only works for full 19x19 boards. For partial boards or variable sizes, set to `False`.
+**Important**: `eliminate_identity_mask=True` only works when the full board is used (no masked regions). For partial boards with masked regions, set to `False`.
 
-### Alternative: Partial Board Support
+### Converting for Different Board Sizes
 
-For partial boards or variable board sizes:
+The converter supports rectangular boards from 2x2 to 37x37:
+
+```python
+import coremltools as ct
+
+# 9x9 board
+mlmodel = ct.converters.katago.convert(
+    "kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz",
+    board_x_size=9,
+    board_y_size=9,
+    minimum_deployment_target=ct.target.iOS18,
+    compute_precision=ct.precision.FLOAT16,
+    eliminate_identity_mask=True
+)
+mlmodel.save("KataGo-9x9.mlpackage")
+
+# 13x13 board
+mlmodel = ct.converters.katago.convert(
+    "kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz",
+    board_x_size=13,
+    board_y_size=13,
+    minimum_deployment_target=ct.target.iOS18,
+    compute_precision=ct.precision.FLOAT16,
+    eliminate_identity_mask=True
+)
+mlmodel.save("KataGo-13x13.mlpackage")
+```
+
+### Partial Board Support
+
+For partial boards with masked regions (e.g., training on subsets of positions):
 
 ```python
 import coremltools as ct
@@ -333,7 +365,7 @@ mlmodel = ct.converters.katago.convert(
     "kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz",
     minimum_deployment_target=ct.target.iOS18,
     compute_precision=ct.precision.FLOAT16,
-    eliminate_identity_mask=False
+    eliminate_identity_mask=False  # Required for partial masking
 )
 mlmodel.save("KataGo.mlpackage")
 ```
@@ -476,8 +508,11 @@ cd ~/katago_workspace/coremltools
 # Activate Python 3.11 environment
 source scripts/env_activate.sh --python=3.11
 
-# Generate test inputs (creates test_inputs/ directory)
+# Generate test inputs for 19x19 board (default)
 python scripts/generate_test_inputs.py
+
+# Or generate for a specific board size (e.g., 9x9)
+python scripts/generate_test_inputs.py --board-x-size 9 --board-y-size 9 -o test_inputs_9x9
 ```
 
 This creates 9 test cases with different board configurations:
@@ -487,9 +522,9 @@ This creates 9 test cases with different board configurations:
 - `edge_pattern.json` - Stones along edge
 - `diagonal_pattern.json` - Diagonal pattern
 - `komi_7_5.json` - Different komi value
-- `partial_mask_9x9.json` - 9x9 board mask
+- `partial_mask_*.json` - Partial board mask (half the board)
 - `random_seed_42.json` - Random position
-- `uniform_small.json` - Small uniform values
+- `uniform_small.json` - Multi-stone pattern
 
 #### Running the Validation
 

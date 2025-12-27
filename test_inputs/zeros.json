@@ -1,6 +1,6 @@
 {
   "name": "zeros",
-  "description": "Empty board - simplest realistic baseline",
+  "description": "Empty board (19x19) - simplest realistic baseline",
   "spatial_input": [
     [
       [

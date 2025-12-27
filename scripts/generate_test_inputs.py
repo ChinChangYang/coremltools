@@ -16,33 +16,32 @@ import numpy as np
 # Constants matching KataGo v7 model
 NUM_SPATIAL_CHANNELS = 22
 NUM_GLOBAL_CHANNELS = 19
-BOARD_SIZE = 19
 
 
-def generate_zeros_test() -> dict:
+def generate_zeros_test(board_x_size: int, board_y_size: int) -> dict:
     """Generate empty board test case (simplest realistic baseline)."""
-    spatial = np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
+    spatial = np.zeros((NUM_SPATIAL_CHANNELS, board_y_size, board_x_size), dtype=np.float32)
     # Channel 0 should always be the valid board mask
     spatial[0, :, :] = 1.0
 
     return {
         "name": "zeros",
-        "description": "Empty board - simplest realistic baseline",
+        "description": f"Empty board ({board_x_size}x{board_y_size}) - simplest realistic baseline",
         "spatial_input": spatial.tolist(),
         "global_input": np.zeros(NUM_GLOBAL_CHANNELS, dtype=np.float32).tolist(),
-        "input_mask": np.ones((BOARD_SIZE, BOARD_SIZE), dtype=np.float32).tolist(),
+        "input_mask": np.ones((board_y_size, board_x_size), dtype=np.float32).tolist(),
     }
 
 
-def generate_random_seed_42_test() -> dict:
+def generate_random_seed_42_test(board_x_size: int, board_y_size: int) -> dict:
     """Generate reproducible random binary pattern test case."""
     np.random.seed(42)
-    spatial = np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
+    spatial = np.zeros((NUM_SPATIAL_CHANNELS, board_y_size, board_x_size), dtype=np.float32)
     # Channel 0 is valid board mask
     spatial[0, :, :] = 1.0
     # Randomly place stones in channels 1-6 (binary 0/1)
     for channel in range(1, 7):
-        random_mask = np.random.rand(BOARD_SIZE, BOARD_SIZE) > 0.7
+        random_mask = np.random.rand(board_y_size, board_x_size) > 0.7
         spatial[channel, random_mask] = 1.0
 
     global_in = np.zeros(NUM_GLOBAL_CHANNELS, dtype=np.float32)
@@ -52,16 +51,16 @@ def generate_random_seed_42_test() -> dict:
 
     return {
         "name": "random_seed_42",
-        "description": "Reproducible random binary pattern (seed=42)",
+        "description": f"Reproducible random binary pattern ({board_x_size}x{board_y_size}, seed=42)",
         "spatial_input": spatial.tolist(),
         "global_input": global_in.tolist(),
-        "input_mask": np.ones((BOARD_SIZE, BOARD_SIZE), dtype=np.float32).tolist(),
+        "input_mask": np.ones((board_y_size, board_x_size), dtype=np.float32).tolist(),
     }
 
 
-def generate_corner_stone_test() -> dict:
+def generate_corner_stone_test(board_x_size: int, board_y_size: int) -> dict:
     """Generate single stone in corner test case."""
-    spatial = np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
+    spatial = np.zeros((NUM_SPATIAL_CHANNELS, board_y_size, board_x_size), dtype=np.float32)
     # Channel 1 is typically player stones
     spatial[1, 0, 0] = 1.0
     # Channel 0 is typically the valid board mask
@@ -69,103 +68,107 @@ def generate_corner_stone_test() -> dict:
 
     return {
         "name": "corner_stone",
-        "description": "Single player stone at corner (0,0)",
+        "description": f"Single player stone at corner (0,0) on {board_x_size}x{board_y_size} board",
         "spatial_input": spatial.tolist(),
         "global_input": np.zeros(NUM_GLOBAL_CHANNELS, dtype=np.float32).tolist(),
-        "input_mask": np.ones((BOARD_SIZE, BOARD_SIZE), dtype=np.float32).tolist(),
+        "input_mask": np.ones((board_y_size, board_x_size), dtype=np.float32).tolist(),
     }
 
 
-def generate_center_stone_test() -> dict:
+def generate_center_stone_test(board_x_size: int, board_y_size: int) -> dict:
     """Generate single stone in center test case."""
-    spatial = np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
-    center = BOARD_SIZE // 2
+    spatial = np.zeros((NUM_SPATIAL_CHANNELS, board_y_size, board_x_size), dtype=np.float32)
+    center_y = board_y_size // 2
+    center_x = board_x_size // 2
     # Channel 1 is typically player stones
-    spatial[1, center, center] = 1.0
+    spatial[1, center_y, center_x] = 1.0
     # Channel 0 is typically the valid board mask
     spatial[0, :, :] = 1.0
 
     return {
         "name": "center_stone",
-        "description": "Single player stone at center (9,9)",
+        "description": f"Single player stone at center ({center_y},{center_x}) on {board_x_size}x{board_y_size} board",
         "spatial_input": spatial.tolist(),
         "global_input": np.zeros(NUM_GLOBAL_CHANNELS, dtype=np.float32).tolist(),
-        "input_mask": np.ones((BOARD_SIZE, BOARD_SIZE), dtype=np.float32).tolist(),
+        "input_mask": np.ones((board_y_size, board_x_size), dtype=np.float32).tolist(),
     }
 
 
-def generate_partial_mask_9x9_test() -> dict:
-    """Generate partial board mask (9x9 in corner) test case."""
-    spatial = np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
-    # Set valid board mask for 9x9 region
-    spatial[0, :9, :9] = 1.0
+def generate_partial_mask_test(board_x_size: int, board_y_size: int) -> dict:
+    """Generate partial board mask test case (half of the board masked)."""
+    spatial = np.zeros((NUM_SPATIAL_CHANNELS, board_y_size, board_x_size), dtype=np.float32)
+    # Set valid board mask for half the board (top half)
+    mask_y = board_y_size // 2
+    mask_x = board_x_size // 2
+    spatial[0, :mask_y, :mask_x] = 1.0
 
-    mask = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
-    mask[:9, :9] = 1.0
+    mask = np.zeros((board_y_size, board_x_size), dtype=np.float32)
+    mask[:mask_y, :mask_x] = 1.0
 
     return {
-        "name": "partial_mask_9x9",
-        "description": "9x9 board mask in top-left corner",
+        "name": f"partial_mask_{mask_x}x{mask_y}",
+        "description": f"{mask_x}x{mask_y} board mask in top-left corner of {board_x_size}x{board_y_size} board",
         "spatial_input": spatial.tolist(),
         "global_input": np.zeros(NUM_GLOBAL_CHANNELS, dtype=np.float32).tolist(),
         "input_mask": mask.tolist(),
     }
 
 
-def generate_edge_pattern_test() -> dict:
+def generate_edge_pattern_test(board_x_size: int, board_y_size: int) -> dict:
     """Generate stones along edge test case."""
-    spatial = np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
+    spatial = np.zeros((NUM_SPATIAL_CHANNELS, board_y_size, board_x_size), dtype=np.float32)
     # Channel 0 is valid board mask
     spatial[0, :, :] = 1.0
     # Channel 1 is player stones - place along top edge
-    for i in range(0, BOARD_SIZE, 2):
+    for i in range(0, board_x_size, 2):
         spatial[1, 0, i] = 1.0
     # Channel 2 is opponent stones - place along second row
-    for i in range(1, BOARD_SIZE, 2):
-        spatial[2, 1, i] = 1.0
+    for i in range(1, board_x_size, 2):
+        if board_y_size > 1:
+            spatial[2, 1, i] = 1.0
 
     return {
         "name": "edge_pattern",
-        "description": "Alternating stones along top edge",
+        "description": f"Alternating stones along top edge ({board_x_size}x{board_y_size})",
         "spatial_input": spatial.tolist(),
         "global_input": np.zeros(NUM_GLOBAL_CHANNELS, dtype=np.float32).tolist(),
-        "input_mask": np.ones((BOARD_SIZE, BOARD_SIZE), dtype=np.float32).tolist(),
+        "input_mask": np.ones((board_y_size, board_x_size), dtype=np.float32).tolist(),
     }
 
 
-def generate_diagonal_pattern_test() -> dict:
+def generate_diagonal_pattern_test(board_x_size: int, board_y_size: int) -> dict:
     """Generate diagonal pattern test case."""
-    spatial = np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
+    spatial = np.zeros((NUM_SPATIAL_CHANNELS, board_y_size, board_x_size), dtype=np.float32)
     # Channel 0 is valid board mask
     spatial[0, :, :] = 1.0
     # Channel 1 is player stones - diagonal
-    for i in range(BOARD_SIZE):
+    for i in range(min(board_x_size, board_y_size)):
         spatial[1, i, i] = 1.0
 
     return {
         "name": "diagonal_pattern",
-        "description": "Diagonal line of player stones",
+        "description": f"Diagonal line of player stones ({board_x_size}x{board_y_size})",
         "spatial_input": spatial.tolist(),
         "global_input": np.zeros(NUM_GLOBAL_CHANNELS, dtype=np.float32).tolist(),
-        "input_mask": np.ones((BOARD_SIZE, BOARD_SIZE), dtype=np.float32).tolist(),
+        "input_mask": np.ones((board_y_size, board_x_size), dtype=np.float32).tolist(),
     }
 
 
-def generate_uniform_small_values_test() -> dict:
+def generate_uniform_small_values_test(board_x_size: int, board_y_size: int) -> dict:
     """Generate complex multi-stone pattern test case."""
-    spatial = np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
+    spatial = np.zeros((NUM_SPATIAL_CHANNELS, board_y_size, board_x_size), dtype=np.float32)
     # Channel 0 is valid board mask
     spatial[0, :, :] = 1.0
 
     # Create a complex pattern with multiple stone groups
     # Player stones (channel 1) - fill every 3rd position
-    for i in range(0, BOARD_SIZE, 3):
-        for j in range(0, BOARD_SIZE, 3):
+    for i in range(0, board_y_size, 3):
+        for j in range(0, board_x_size, 3):
             spatial[1, i, j] = 1.0
 
     # Opponent stones (channel 2) - fill offset positions
-    for i in range(1, BOARD_SIZE, 3):
-        for j in range(1, BOARD_SIZE, 3):
+    for i in range(1, board_y_size, 3):
+        for j in range(1, board_x_size, 3):
             spatial[2, i, j] = 1.0
 
     global_in = np.zeros(NUM_GLOBAL_CHANNELS, dtype=np.float32)
@@ -173,16 +176,16 @@ def generate_uniform_small_values_test() -> dict:
 
     return {
         "name": "uniform_small",
-        "description": "Complex multi-stone pattern with binary features",
+        "description": f"Complex multi-stone pattern ({board_x_size}x{board_y_size})",
         "spatial_input": spatial.tolist(),
         "global_input": global_in.tolist(),
-        "input_mask": np.ones((BOARD_SIZE, BOARD_SIZE), dtype=np.float32).tolist(),
+        "input_mask": np.ones((board_y_size, board_x_size), dtype=np.float32).tolist(),
     }
 
 
-def generate_komi_test() -> dict:
+def generate_komi_test(board_x_size: int, board_y_size: int) -> dict:
     """Generate test with komi value set."""
-    spatial = np.zeros((NUM_SPATIAL_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
+    spatial = np.zeros((NUM_SPATIAL_CHANNELS, board_y_size, board_x_size), dtype=np.float32)
     spatial[0, :, :] = 1.0  # Valid board mask
 
     global_in = np.zeros(NUM_GLOBAL_CHANNELS, dtype=np.float32)
@@ -191,10 +194,10 @@ def generate_komi_test() -> dict:
 
     return {
         "name": "komi_7_5",
-        "description": "Empty board with komi = 7.5",
+        "description": f"Empty board ({board_x_size}x{board_y_size}) with komi = 7.5",
         "spatial_input": spatial.tolist(),
         "global_input": global_in.tolist(),
-        "input_mask": np.ones((BOARD_SIZE, BOARD_SIZE), dtype=np.float32).tolist(),
+        "input_mask": np.ones((board_y_size, board_x_size), dtype=np.float32).tolist(),
     }
 
 
@@ -219,12 +222,33 @@ def main():
         default="test_inputs",
         help="Output directory for test input JSON files (default: test_inputs)"
     )
+    parser.add_argument(
+        "--board-x-size",
+        type=int,
+        default=19,
+        help="Board width (number of columns, default: 19)"
+    )
+    parser.add_argument(
+        "--board-y-size",
+        type=int,
+        default=19,
+        help="Board height (number of rows, default: 19)"
+    )
     args = parser.parse_args()
+
+    board_x_size = args.board_x_size
+    board_y_size = args.board_y_size
+
+    # Validate board size
+    if not (2 <= board_x_size <= 37):
+        raise ValueError(f"board_x_size must be in range [2, 37], got {board_x_size}")
+    if not (2 <= board_y_size <= 37):
+        raise ValueError(f"board_y_size must be in range [2, 37], got {board_y_size}")
 
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Generating test inputs in {output_dir}/")
+    print(f"Generating test inputs for {board_x_size}x{board_y_size} board in {output_dir}/")
 
     # Generate all test cases
     test_generators = [
@@ -232,7 +256,7 @@ def main():
         generate_random_seed_42_test,
         generate_corner_stone_test,
         generate_center_stone_test,
-        generate_partial_mask_9x9_test,
+        generate_partial_mask_test,
         generate_edge_pattern_test,
         generate_diagonal_pattern_test,
         generate_uniform_small_values_test,
@@ -240,7 +264,7 @@ def main():
     ]
 
     for generator in test_generators:
-        test_case = generator()
+        test_case = generator(board_x_size, board_y_size)
         save_test_case(test_case, output_dir)
 
     print(f"\nGenerated {len(test_generators)} test cases")
@@ -248,10 +272,11 @@ def main():
     # Also create an index file
     index = {
         "description": "KataGo to Core ML cross-validation test inputs",
-        "board_size": BOARD_SIZE,
+        "board_x_size": board_x_size,
+        "board_y_size": board_y_size,
         "num_spatial_channels": NUM_SPATIAL_CHANNELS,
         "num_global_channels": NUM_GLOBAL_CHANNELS,
-        "test_cases": [gen().__getitem__("name") for gen in test_generators]
+        "test_cases": [gen(board_x_size, board_y_size)["name"] for gen in test_generators]
     }
 
     index_path = output_dir / "index.json"

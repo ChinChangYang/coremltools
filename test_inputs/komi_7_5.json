@@ -1,6 +1,6 @@
 {
   "name": "komi_7_5",
-  "description": "Empty board with komi = 7.5",
+  "description": "Empty board (19x19) with komi = 7.5",
   "spatial_input": [
     [
       [

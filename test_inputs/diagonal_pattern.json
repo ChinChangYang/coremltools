@@ -1,6 +1,6 @@
 {
   "name": "diagonal_pattern",
-  "description": "Diagonal line of player stones",
+  "description": "Diagonal line of player stones (19x19)",
   "spatial_input": [
     [
       [

@@ -46,7 +46,6 @@ class KataGoModelParser:
     """
 
     SUPPORTED_VERSIONS = (15, 16)
-    BOARD_SIZE = 19
 
     def __init__(self, model_path: str):
         """

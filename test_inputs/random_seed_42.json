@@ -1,6 +1,6 @@
 {
   "name": "random_seed_42",
-  "description": "Reproducible random binary pattern (seed=42)",
+  "description": "Reproducible random binary pattern (19x19, seed=42)",
   "spatial_input": [
     [
       [
