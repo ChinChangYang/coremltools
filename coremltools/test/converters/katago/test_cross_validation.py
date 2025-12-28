@@ -155,10 +155,20 @@ class TestKataGoCrossValidation:
         # Assert all outputs pass
         failures = []
         for key, result in results.items():
-            if result["status"] != "PASS":
-                failures.append(f"{key}: {result['status']}")
+            status = result["status"]
+            if status != "PASS":
+                failures.append(
+                    f"{key}: {status} - max_diff={result.get('max_diff', 'N/A')}, "
+                    f"mean_diff={result.get('mean_diff', 'N/A')}, "
+                    f"tolerance={result.get('tolerance', 'N/A')}"
+                )
 
-        assert not failures, f"Partial mask test failed on {board_size}x{board_size}: {failures}"
+        if failures:
+            failure_msg = (
+                f"Partial mask test failed on {board_size}x{board_size}:\n"
+                + "\n".join(f"  - {f}" for f in failures)
+            )
+            pytest.fail(failure_msg)
 
 
 class TestKataGoCorMLOnly:

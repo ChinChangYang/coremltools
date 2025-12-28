@@ -75,16 +75,10 @@ class KataGoOps:
         # Weights are already in OIHW format from parser
         weights = layer.weights.astype(np.float32)
 
-        # Calculate padding for "same" behavior with dilation
-        # pad_y = (kernel_size - 1) * dilation // 2
-        pad_y = (layer.conv_y_size - 1) * layer.dilation_y // 2
-        pad_x = (layer.conv_x_size - 1) * layer.dilation_x // 2
-
         return mb.conv(
             x=x,
             weight=weights,
-            pad_type="custom",
-            pad=[pad_y, pad_y, pad_x, pad_x],
+            pad_type="same",
             dilations=[layer.dilation_y, layer.dilation_x],
             strides=[1, 1],
             groups=1,

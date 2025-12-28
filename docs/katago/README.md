@@ -460,13 +460,13 @@ The converter has been validated against the KataGo C++ Eigen backend to ensure 
 
 ### Running Cross-Validation Tests
 
-To verify the converted Core ML model produces identical outputs to the KataGo Eigen backend, you can run the cross-validation test suite.
+To verify the converted Core ML model produces identical outputs to the KataGo Eigen backend, run the pytest-based cross-validation test suite.
 
 #### Prerequisites
 
 **1. Build KataGo with Eigen Backend and Validation Subcommand**
 
-The validation script compares Core ML outputs against KataGo's C++ Eigen backend. You'll need a KataGo executable built with Eigen support and the validation subcommand.
+The validation tests compare Core ML outputs against KataGo's C++ Eigen backend. You'll need a KataGo executable built with Eigen support and the validation subcommand.
 
 **Important:** Use the fork with validation subcommand support, not the official KataGo repository.
 
@@ -498,35 +498,22 @@ make -j8
 # Should show: validation subcommand usage
 ```
 
-**2. Generate Test Inputs**
+**2. Ensure Test Inputs Exist**
 
-The validation script requires test input files. If they don't exist yet, generate them:
+Test inputs should already be present in the `test_inputs/` directory:
 
 ```bash
 cd ~/katago_workspace/coremltools
 
-# Activate Python 3.11 environment
-source scripts/env_activate.sh --python=3.11
+# Check test inputs exist
+ls test_inputs/19x19/
+# Should show: zeros.json, random_seed_42.json, corner_stone.json, etc.
 
-# Generate test inputs for 19x19 board (default)
-python scripts/generate_test_inputs.py
-
-# Or generate for a specific board size (e.g., 9x9)
-python scripts/generate_test_inputs.py --board-x-size 9 --board-y-size 9 -o test_inputs_9x9
+# If missing, generate them:
+python scripts/generate_test_inputs.py --board-x-size 19 --board-y-size 19 -o test_inputs/19x19
 ```
 
-This creates 9 test cases with different board configurations:
-- `zeros.json` - Empty board
-- `center_stone.json` - Single stone at center
-- `corner_stone.json` - Single stone at corner
-- `edge_pattern.json` - Stones along edge
-- `diagonal_pattern.json` - Diagonal pattern
-- `komi_7_5.json` - Different komi value
-- `partial_mask_*.json` - Partial board mask (half the board)
-- `random_seed_42.json` - Random position
-- `uniform_small.json` - Multi-stone pattern
-
-#### Running the Validation
+#### Running Pytest Tests
 
 ```bash
 cd ~/katago_workspace/coremltools
@@ -534,33 +521,42 @@ cd ~/katago_workspace/coremltools
 # Ensure Python 3.11 environment is activated
 source scripts/env_activate.sh --python=3.11
 
-# Run cross-validation
-python scripts/validate_coreml.py \
-  --model-mlpackage ../KataGo.mlpackage \
-  --model-bin ~/katago_workspace/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
-  --katago-exe ~/katago_workspace/KataGo/cpp/build/katago \
-  --test-inputs test_inputs/19x19
+# Run all cross-validation tests (all board sizes: 9x9, 13x13, 19x19)
+pytest coremltools/test/converters/katago/test_cross_validation.py -v
+
+# Run tests for specific board size
+pytest coremltools/test/converters/katago/test_cross_validation.py -v -k "19"
+
+# Run specific test case across all board sizes
+pytest coremltools/test/converters/katago/test_cross_validation.py -v -k "zeros"
+
+# Run only fast tests (excludes cross-validation, which is marked as slow)
+pytest coremltools/test/converters/katago/ -v -m "not slow"
 ```
 
 **Expected output:**
 ```
-Found 9 test case(s)
-Core ML model: ../KataGo.mlpackage
-KataGo model: ~/katago_workspace/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
-KataGo exe: ~/katago_workspace/KataGo/cpp/build/katago
+test_cross_validation.py::TestKataGoCrossValidation::test_cross_validation_against_eigen[19-zeros] PASSED
+test_cross_validation.py::TestKataGoCrossValidation::test_cross_validation_against_eigen[19-random_seed_42] PASSED
+test_cross_validation.py::TestKataGoCrossValidation::test_cross_validation_against_eigen[19-corner_stone] PASSED
+...
+test_cross_validation.py::TestKataGoCrossValidation::test_partial_mask[19] PASSED
 
-=== Test Case: center_stone ===
-  policy: max_diff=5.21e-04, mean_diff=4.48e-05, tol=5e-02 [PASS]
-  pass_policy: max_diff=1.11e-04, mean_diff=1.11e-04, tol=1e-02 [PASS]
-  value: max_diff=5.72e-05, mean_diff=3.42e-05, tol=2e-01 [PASS]
-  ownership: max_diff=2.30e-05, mean_diff=2.29e-06, tol=5e-03 [PASS]
-  score_value: max_diff=3.24e-05, mean_diff=1.44e-05, tol=5e-02 [PASS]
-
-... (8 more test cases)
-
-==================================================
-All tests PASSED
+========================================== 9 passed in 12.3s ==========================================
 ```
+
+**Understanding Test Failures:**
+
+When a test fails, pytest shows detailed error information:
+```
+FAILED test_cross_validation.py::TestKataGoCrossValidation::test_cross_validation_against_eigen[19-zeros]
+
+Cross-validation failed for zeros on 19x19:
+  - policy: FAIL - max_diff=8.21e-02, tolerance=7e-02
+  - value: PASS - max_diff=1.15e-04, tolerance=2e-01
+```
+
+This indicates which output exceeded tolerance and by how much.
 
 #### Understanding Results
 
@@ -591,6 +587,130 @@ For each test case, the validation compares 5 outputs:
 - **FAIL** - Differences exceed tolerance (red)
 - **MISSING** - Output not found (yellow)
 - **SHAPE_MISMATCH** - Output shapes don't match (yellow)
+
+**Tolerances are defined in:** `coremltools/test/converters/katago/validation_utils.py`
+
+These tolerances account for expected differences between Core ML (ANE/GPU) and Eigen (CPU) implementations due to float32 precision, operation ordering, and hardware-specific optimizations.
+
+---
+
+## Tolerance Analysis
+
+### Purpose
+
+The tolerance analysis script provides detailed statistics about cross-validation errors to:
+- Determine minimum safe tolerance values
+- Validate converter changes (e.g., convolution padding modifications)
+- Understand error distribution across test cases
+- Identify which outputs have tightest/loosest margins
+
+### Running Tolerance Analysis
+
+```bash
+cd ~/katago_workspace/coremltools
+
+# Ensure Python 3.11 environment is activated
+source scripts/env_activate.sh --python=3.11
+
+# Analyze all board sizes (9x9, 13x13, 19x19)
+python scripts/analyze_tolerances.py
+
+# Analyze specific board size
+python scripts/analyze_tolerances.py --board-size 19
+
+# Save detailed results to JSON
+python scripts/analyze_tolerances.py --output tolerance_analysis.json
+
+# Show only summary table
+python scripts/analyze_tolerances.py --summary-only
+```
+
+### Understanding the Output
+
+The script produces three sections:
+
+**1. Summary Table**
+```
+Output          Tests    Max Observed    Current Tol     Suggested Tol   Status
+--------------------------------------------------------------------------------
+policy          27       5.21e-04        7e-02           7.82e-04        TIGHT
+pass_policy     27       1.11e-04        1e-02           1.67e-04        TIGHT
+value           27       5.72e-05        2e-01           8.58e-05        TIGHT
+```
+
+- **Tests**: Number of test cases analyzed
+- **Max Observed**: Highest max_diff seen across all tests
+- **Current Tol**: Current tolerance (from validation_utils.py)
+- **Suggested Tol**: Recommended tolerance (P99 × 1.5 safety margin)
+- **Status**:
+  - `FAIL`: Max observed exceeds current tolerance (tests would fail)
+  - `TIGHT`: Suggested tolerance is lower (current tolerance is conservative)
+  - `OK`: Current tolerance is appropriate
+
+**2. Detailed Statistics**
+
+Shows min/mean/median/P95/P99/max for both max_diff and mean_diff across all test cases.
+
+**3. Recommendations**
+
+Provides code snippet for updating `TOLERANCES` in `validation_utils.py`.
+
+### When to Use Tolerance Analysis
+
+**Use Case 1: Validating Converter Changes**
+
+When making changes to the converter (e.g., changing convolution padding from `custom` to `same`):
+
+```bash
+# Run tolerance analysis to see current error values
+python scripts/analyze_tolerances.py --board-size 19
+
+# Review max observed values - if within current tolerances, change is safe
+```
+
+If max observed values remain within current tolerances, the change is safe.
+
+**Use Case 2: Determining Minimum Tolerances**
+
+After extensive testing or model updates, determine if tolerances can be tightened:
+
+```bash
+# Run analysis
+python scripts/analyze_tolerances.py --summary-only
+
+# If all statuses are "TIGHT", consider updating validation_utils.py
+# to use suggested tolerances
+```
+
+**Use Case 3: Investigating Test Failures**
+
+If pytest tests fail due to tolerance issues:
+
+```bash
+# Run detailed analysis
+python scripts/analyze_tolerances.py
+
+# Check which output failed and by how much
+# Determine if:
+#   a) Tolerance needs updating (expected difference)
+#   b) Converter has a bug (unexpected large difference)
+```
+
+### Safety Margin
+
+The default safety margin is 1.5× (suggested tolerance = P99 max_diff × 1.5).
+
+Adjust for different risk profiles:
+
+```bash
+# Conservative (2× margin)
+python scripts/analyze_tolerances.py --safety-margin 2.0
+
+# Aggressive (1.1× margin)
+python scripts/analyze_tolerances.py --safety-margin 1.1
+```
+
+**Recommended:** Use 1.5× for production, 2.0× for frequent model changes.
 
 ---
 

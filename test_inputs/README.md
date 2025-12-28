@@ -143,28 +143,22 @@ curl -O https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b2
 mv kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz KataGo/
 ```
 
-### Cross-Validation Script
+### Pytest Cross-Validation Tests
+
+The test inputs are used by the pytest-based cross-validation test suite:
 
 ```bash
-python scripts/validate_coreml.py \
-    --model-mlpackage KataGo-9x9.mlpackage \
-    --model-bin kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
-    --katago-exe KataGo/cpp/build/katago \
-    --test-inputs test_inputs/9x9
-```
-
-### Pytest Tests
-
-```bash
-# Run all cross-validation tests (all board sizes)
-pytest coremltools/test/converters/katago/ -v
+# Run all cross-validation tests (all board sizes: 9x9, 13x13, 19x19)
+pytest coremltools/test/converters/katago/test_cross_validation.py -v
 
 # Run tests for specific board size
-pytest coremltools/test/converters/katago/ -v -k "9"
+pytest coremltools/test/converters/katago/test_cross_validation.py -v -k "9"
 
 # Run specific test case across all board sizes
-pytest coremltools/test/converters/katago/ -v -k "zeros"
+pytest coremltools/test/converters/katago/test_cross_validation.py -v -k "zeros"
 ```
+
+For detailed validation results and tolerance analysis, see `docs/katago/README.md`.
 
 ## Metadata (index.json)
 
