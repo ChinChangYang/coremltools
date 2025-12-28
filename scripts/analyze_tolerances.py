@@ -37,12 +37,31 @@ from coremltools.test.converters.katago.validation_utils import (
 )
 
 
+def is_full_board_mask(inputs: dict) -> bool:
+    """Check if input mask represents a full board (all 1.0 values).
+
+    The eliminate_identity_mask optimization precomputes constants assuming
+    all mask values are 1.0. Test cases with partial masks (0.0 values) are
+    incompatible with this optimization and should be skipped.
+
+    Args:
+        inputs: Dictionary with 'mask' key containing the input mask array
+
+    Returns:
+        True if all mask values are 1.0 (full board), False otherwise
+    """
+    mask = inputs["mask"]  # Shape: [1, 1, H, W]
+    return bool(np.all(mask == 1.0))
+
+
 def collect_test_statistics(
     board_size: int,
     model_path: str,
     katago_bin: str,
     katago_exe: str,
     test_inputs_dir: Path,
+    eliminate_identity_mask: bool,
+    use_relative_tolerance: bool = False,
 ) -> List[Dict]:
     """Run all tests for a board size and collect statistics.
 
@@ -52,6 +71,8 @@ def collect_test_statistics(
         katago_bin: Path to KataGo .bin.gz model
         katago_exe: Path to KataGo executable
         test_inputs_dir: Directory containing test input JSON files
+        eliminate_identity_mask: Value of eliminate_identity_mask used for this model
+        use_relative_tolerance: If True, use relative tolerances for comparison
 
     Returns:
         List of dictionaries with test results (one per test case)
@@ -66,6 +87,12 @@ def collect_test_statistics(
 
         inputs = load_test_input(test_file)
 
+        # Skip partial mask tests when eliminate_identity_mask=True
+        # (the optimization assumes full board with all mask values = 1.0)
+        if eliminate_identity_mask and not is_full_board_mask(inputs):
+            print(f"    Skipped (partial mask incompatible with eliminate_identity_mask)")
+            continue
+
         try:
             coreml_out = run_coreml_model(model_path, inputs)
             eigen_out = run_eigen_backend(katago_bin, inputs, katago_exe)
@@ -74,11 +101,12 @@ def collect_test_statistics(
                 print(f"    Skipped (Eigen backend failed)")
                 continue
 
-            comparison = compare_outputs(eigen_out, coreml_out)
+            comparison = compare_outputs(eigen_out, coreml_out, use_relative_tolerance=use_relative_tolerance)
 
             results.append({
                 "test_case": test_file.stem,
                 "board_size": board_size,
+                "eliminate_identity_mask": eliminate_identity_mask,
                 "comparison": comparison,
             })
 
@@ -98,7 +126,12 @@ def aggregate_statistics(all_results: List[Dict]) -> Dict:
     Returns:
         Dictionary with statistics per output type
     """
-    by_output = defaultdict(lambda: {"max_diffs": [], "mean_diffs": []})
+    by_output = defaultdict(lambda: {
+        "max_diffs": [],
+        "mean_diffs": [],
+        "max_relative_diffs": [],
+        "mean_relative_diffs": [],
+    })
 
     for result in all_results:
         comparison = result["comparison"]
@@ -106,11 +139,15 @@ def aggregate_statistics(all_results: List[Dict]) -> Dict:
             if metrics["status"] in ("PASS", "FAIL", "FAIL_NAN_INF"):
                 by_output[output_key]["max_diffs"].append(metrics["max_diff"])
                 by_output[output_key]["mean_diffs"].append(metrics["mean_diff"])
+                by_output[output_key]["max_relative_diffs"].append(metrics["max_relative_diff"])
+                by_output[output_key]["mean_relative_diffs"].append(metrics["mean_relative_diff"])
 
     stats = {}
     for output_key, values in by_output.items():
         max_diffs = np.array(values["max_diffs"])
         mean_diffs = np.array(values["mean_diffs"])
+        max_relative_diffs = np.array(values["max_relative_diffs"])
+        mean_relative_diffs = np.array(values["mean_relative_diffs"])
 
         stats[output_key] = {
             "num_tests": len(max_diffs),
@@ -130,40 +167,72 @@ def aggregate_statistics(all_results: List[Dict]) -> Dict:
                 "p95": float(np.percentile(mean_diffs, 95)),
                 "p99": float(np.percentile(mean_diffs, 99)),
             },
+            "max_relative_diff": {
+                "min": float(np.min(max_relative_diffs)),
+                "max": float(np.max(max_relative_diffs)),
+                "mean": float(np.mean(max_relative_diffs)),
+                "median": float(np.median(max_relative_diffs)),
+                "p95": float(np.percentile(max_relative_diffs, 95)),
+                "p99": float(np.percentile(max_relative_diffs, 99)),
+            },
+            "mean_relative_diff": {
+                "min": float(np.min(mean_relative_diffs)),
+                "max": float(np.max(mean_relative_diffs)),
+                "mean": float(np.mean(mean_relative_diffs)),
+                "median": float(np.median(mean_relative_diffs)),
+                "p95": float(np.percentile(mean_relative_diffs, 95)),
+                "p99": float(np.percentile(mean_relative_diffs, 99)),
+            },
         }
 
     return stats
 
 
-def suggest_tolerances(stats: Dict, safety_margin: float = 1.5) -> Dict:
+def suggest_tolerances(stats: Dict, safety_margin: float = 1.5, tolerance_type: str = "absolute") -> Dict:
     """Suggest minimum tolerances with safety margin.
 
     Args:
         stats: Statistics dictionary from aggregate_statistics()
         safety_margin: Multiplier for P99 max_diff (default: 1.5)
+        tolerance_type: Type of tolerance - "absolute" or "relative" (default: "absolute")
 
     Returns:
         Dictionary of suggested tolerances per output type
+
+    Raises:
+        ValueError: If tolerance_type is not "absolute" or "relative"
     """
+    if tolerance_type not in ("absolute", "relative"):
+        raise ValueError(f"tolerance_type must be 'absolute' or 'relative', got '{tolerance_type}'")
+
     suggested = {}
     for output_key, values in stats.items():
-        baseline = values["max_diff"]["p99"]
+        if tolerance_type == "absolute":
+            baseline = values["max_diff"]["p99"]
+        else:  # relative
+            baseline = values["max_relative_diff"]["p99"]
         suggested[output_key] = baseline * safety_margin
     return suggested
 
 
 def print_report(
     stats: Dict,
-    suggested_tolerances: Dict,
-    current_tolerances: Dict,
+    suggested_absolute_tolerances: Dict,
+    suggested_relative_tolerances: Dict,
+    current_absolute_tolerances: Dict,
+    current_relative_tolerances: Dict,
+    use_relative_tolerance: bool = False,
     summary_only: bool = False,
 ):
     """Print detailed analysis report.
 
     Args:
         stats: Statistics dictionary
-        suggested_tolerances: Suggested tolerance values
-        current_tolerances: Current tolerance values
+        suggested_absolute_tolerances: Suggested absolute tolerance values
+        suggested_relative_tolerances: Suggested relative tolerance values
+        current_absolute_tolerances: Current absolute tolerance values
+        current_relative_tolerances: Current relative tolerance values
+        use_relative_tolerance: If True, comparisons use relative tolerances
         summary_only: If True, only print summary table
     """
 
@@ -173,17 +242,26 @@ def print_report(
 
     # Summary table
     print("\nSummary (across all test cases):\n")
-    print(f"{'Output':<15} {'Tests':<8} {'Max Observed':<15} {'Current Tol':<15} {'Suggested Tol':<15} {'Status'}")
-    print("-" * 80)
+    print(f"Tolerance Mode: {'Relative' if use_relative_tolerance else 'Absolute'}\n")
+    print(f"{'Output':<15} {'Tests':<8} {'Max Abs':<12} {'Max Rel':<12} {'Cur Tol':<12} {'Sug Tol':<12} {'Status'}")
+    print("-" * 95)
 
     for output_key in ["policy", "pass_policy", "value", "ownership", "score_value"]:
         if output_key not in stats:
             continue
 
         num_tests = stats[output_key]["num_tests"]
-        max_observed = stats[output_key]["max_diff"]["max"]
-        current_tol = current_tolerances[output_key]
-        suggested_tol = suggested_tolerances[output_key]
+        max_abs_observed = stats[output_key]["max_diff"]["max"]
+        max_rel_observed = stats[output_key]["max_relative_diff"]["max"]
+
+        if use_relative_tolerance:
+            current_tol = current_relative_tolerances[output_key]
+            suggested_tol = suggested_relative_tolerances[output_key]
+            max_observed = max_rel_observed
+        else:
+            current_tol = current_absolute_tolerances[output_key]
+            suggested_tol = suggested_absolute_tolerances[output_key]
+            max_observed = max_abs_observed
 
         if max_observed > current_tol:
             status = "FAIL"
@@ -192,7 +270,7 @@ def print_report(
         else:
             status = "OK"
 
-        print(f"{output_key:<15} {num_tests:<8} {max_observed:<15.2e} {current_tol:<15.2e} {suggested_tol:<15.2e} {status}")
+        print(f"{output_key:<15} {num_tests:<8} {max_abs_observed:<12.2e} {max_rel_observed:<12.2e} {current_tol:<12.2e} {suggested_tol:<12.2e} {status}")
 
     if summary_only:
         return
@@ -209,32 +287,56 @@ def print_report(
         values = stats[output_key]
         print(f"\n{output_key}:")
         print(f"  Tests: {values['num_tests']}")
-        print(f"  Max Diff:")
+        print(f"  Absolute Max Diff:")
         print(f"    Min:    {values['max_diff']['min']:.2e}")
         print(f"    Mean:   {values['max_diff']['mean']:.2e}")
         print(f"    Median: {values['max_diff']['median']:.2e}")
         print(f"    P95:    {values['max_diff']['p95']:.2e}")
         print(f"    P99:    {values['max_diff']['p99']:.2e}")
         print(f"    Max:    {values['max_diff']['max']:.2e}")
-        print(f"  Mean Diff:")
+        print(f"  Absolute Mean Diff:")
         print(f"    Min:    {values['mean_diff']['min']:.2e}")
         print(f"    Mean:   {values['mean_diff']['mean']:.2e}")
         print(f"    Median: {values['mean_diff']['median']:.2e}")
         print(f"    P95:    {values['mean_diff']['p95']:.2e}")
         print(f"    P99:    {values['mean_diff']['p99']:.2e}")
         print(f"    Max:    {values['mean_diff']['max']:.2e}")
+        print(f"  Relative Max Diff:")
+        print(f"    Min:    {values['max_relative_diff']['min']:.2e}")
+        print(f"    Mean:   {values['max_relative_diff']['mean']:.2e}")
+        print(f"    Median: {values['max_relative_diff']['median']:.2e}")
+        print(f"    P95:    {values['max_relative_diff']['p95']:.2e}")
+        print(f"    P99:    {values['max_relative_diff']['p99']:.2e}")
+        print(f"    Max:    {values['max_relative_diff']['max']:.2e}")
+        print(f"  Relative Mean Diff:")
+        print(f"    Min:    {values['mean_relative_diff']['min']:.2e}")
+        print(f"    Mean:   {values['mean_relative_diff']['mean']:.2e}")
+        print(f"    Median: {values['mean_relative_diff']['median']:.2e}")
+        print(f"    P95:    {values['mean_relative_diff']['p95']:.2e}")
+        print(f"    P99:    {values['mean_relative_diff']['p99']:.2e}")
+        print(f"    Max:    {values['mean_relative_diff']['max']:.2e}")
 
     # Recommendations
     print("\n" + "=" * 80)
     print("Recommendations")
     print("=" * 80)
 
-    print("\nSuggested tolerance updates (validation_utils.py):")
+    print("\nSuggested ABSOLUTE tolerance updates (validation_utils.py):")
     print("```python")
     print("TOLERANCES = {")
     for output_key in ["policy", "pass_policy", "value", "ownership", "score_value"]:
-        if output_key in suggested_tolerances:
-            suggested = suggested_tolerances[output_key]
+        if output_key in suggested_absolute_tolerances:
+            suggested = suggested_absolute_tolerances[output_key]
+            print(f"    \"{output_key}\": {suggested:.1e},")
+    print("}")
+    print("```")
+
+    print("\nSuggested RELATIVE tolerance updates (validation_utils.py):")
+    print("```python")
+    print("RELATIVE_TOLERANCES = {")
+    for output_key in ["policy", "pass_policy", "value", "ownership", "score_value"]:
+        if output_key in suggested_relative_tolerances:
+            suggested = suggested_relative_tolerances[output_key]
             print(f"    \"{output_key}\": {suggested:.1e},")
     print("}")
     print("```")
@@ -244,6 +346,9 @@ def print_report(
     print("  - FAIL: Current tolerance exceeded (tests would fail)")
     print("  - TIGHT: Suggested tolerance lower than current (can tighten)")
     print("  - OK: Current tolerance appropriate")
+    print("\nTolerance Types:")
+    print("  - Absolute: Direct threshold on max difference (simpler)")
+    print("  - Relative: Threshold on max_diff / max(abs(eigen_reference)) (scales with magnitude)")
 
 
 def main():
@@ -285,6 +390,18 @@ def main():
         type=float,
         default=1.5,
         help="Safety margin multiplier for suggested tolerances (default: 1.5)"
+    )
+    parser.add_argument(
+        "--eliminate-identity-mask",
+        type=str,
+        choices=["true", "false", "both"],
+        default="both",
+        help="Test with eliminate_identity_mask=True, False, or both (default: both)"
+    )
+    parser.add_argument(
+        "--use-relative-tolerance",
+        action="store_true",
+        help="Use relative tolerances instead of absolute tolerances"
     )
     args = parser.parse_args()
 
@@ -339,47 +456,58 @@ def main():
     else:
         board_sizes = [9, 13, 19]
 
+    # Determine eliminate_identity_mask settings to test
+    if args.eliminate_identity_mask == "both":
+        mask_settings = [True, False]
+    else:
+        mask_settings = [args.eliminate_identity_mask == "true"]
+
     # Convert models and collect statistics
     all_results = []
 
+    import coremltools as ct
+    from coremltools.converters.katago import convert
+
     for board_size in board_sizes:
-        print(f"\nAnalyzing {board_size}x{board_size} board...")
+        for eliminate_identity_mask in mask_settings:
+            mask_str = "mask_true" if eliminate_identity_mask else "mask_false"
+            print(f"\nAnalyzing {board_size}x{board_size} board with eliminate_identity_mask={eliminate_identity_mask}...")
 
-        import coremltools as ct
-        from coremltools.converters.katago import convert
+            model_path = str(repo_root / f"KataGo_{board_size}x{board_size}_{mask_str}.mlpackage")
 
-        model_path = str(repo_root / f"KataGo_{board_size}x{board_size}.mlpackage")
+            if not Path(model_path).exists():
+                print(f"  Converting model to {model_path}...")
+                mlmodel = convert(
+                    args.model_bin,
+                    board_x_size=board_size,
+                    board_y_size=board_size,
+                    eliminate_identity_mask=eliminate_identity_mask,
+                    minimum_deployment_target=ct.target.iOS18,
+                    compute_precision=ct.precision.FLOAT16,
+                    compute_units=ct.ComputeUnit.CPU_AND_NE,
+                )
+                mlmodel.save(model_path)
+            else:
+                print(f"  Using existing model: {model_path}")
 
-        if not Path(model_path).exists():
-            print(f"  Converting model to {model_path}...")
-            mlmodel = convert(
+            test_inputs_dir = repo_root / "test_inputs" / f"{board_size}x{board_size}"
+
+            if not test_inputs_dir.exists():
+                print(f"  Skipping (test inputs not found: {test_inputs_dir})")
+                continue
+
+            results = collect_test_statistics(
+                board_size,
+                model_path,
                 args.model_bin,
-                board_x_size=board_size,
-                board_y_size=board_size,
-                minimum_deployment_target=ct.target.iOS18,
-                compute_precision=ct.precision.FLOAT16,
-                compute_units=ct.ComputeUnit.CPU_AND_NE,
+                args.katago_exe,
+                test_inputs_dir,
+                eliminate_identity_mask,
+                args.use_relative_tolerance,
             )
-            mlmodel.save(model_path)
-        else:
-            print(f"  Using existing model: {model_path}")
 
-        test_inputs_dir = repo_root / "test_inputs" / f"{board_size}x{board_size}"
-
-        if not test_inputs_dir.exists():
-            print(f"  Skipping (test inputs not found: {test_inputs_dir})")
-            continue
-
-        results = collect_test_statistics(
-            board_size,
-            model_path,
-            args.model_bin,
-            args.katago_exe,
-            test_inputs_dir,
-        )
-
-        all_results.extend(results)
-        print(f"  Collected {len(results)} test results")
+            all_results.extend(results)
+            print(f"  Collected {len(results)} test results")
 
     if not all_results:
         print("\nError: No test results collected")
@@ -388,19 +516,37 @@ def main():
     # Aggregate and report
     print(f"\nAggregating statistics from {len(all_results)} tests...")
     stats = aggregate_statistics(all_results)
-    current_tolerances = get_default_tolerances()
-    suggested_tolerances = suggest_tolerances(stats, safety_margin=args.safety_margin)
 
-    print_report(stats, suggested_tolerances, current_tolerances, args.summary_only)
+    # Get current tolerances (both types)
+    current_absolute_tolerances = get_default_tolerances("absolute")
+    current_relative_tolerances = get_default_tolerances("relative")
+
+    # Generate suggestions (both types)
+    suggested_absolute_tolerances = suggest_tolerances(stats, safety_margin=args.safety_margin, tolerance_type="absolute")
+    suggested_relative_tolerances = suggest_tolerances(stats, safety_margin=args.safety_margin, tolerance_type="relative")
+
+    print_report(
+        stats,
+        suggested_absolute_tolerances,
+        suggested_relative_tolerances,
+        current_absolute_tolerances,
+        current_relative_tolerances,
+        args.use_relative_tolerance,
+        args.summary_only,
+    )
 
     # Save JSON if requested
     if args.output:
         output_data = {
             "num_tests": len(all_results),
             "board_sizes": list(set(r["board_size"] for r in all_results)),
+            "eliminate_identity_mask_settings": list(set(r["eliminate_identity_mask"] for r in all_results)),
+            "tolerance_mode": "relative" if args.use_relative_tolerance else "absolute",
             "statistics": stats,
-            "current_tolerances": current_tolerances,
-            "suggested_tolerances": suggested_tolerances,
+            "current_absolute_tolerances": current_absolute_tolerances,
+            "current_relative_tolerances": current_relative_tolerances,
+            "suggested_absolute_tolerances": suggested_absolute_tolerances,
+            "suggested_relative_tolerances": suggested_relative_tolerances,
             "safety_margin": args.safety_margin,
             "raw_results": all_results,
         }
@@ -412,8 +558,15 @@ def main():
 
     # Exit status
     failures = []
+    if args.use_relative_tolerance:
+        current_tolerances = current_relative_tolerances
+        diff_key = "max_relative_diff"
+    else:
+        current_tolerances = current_absolute_tolerances
+        diff_key = "max_diff"
+
     for output_key, values in stats.items():
-        max_observed = values["max_diff"]["max"]
+        max_observed = values[diff_key]["max"]
         current_tol = current_tolerances[output_key]
         if max_observed > current_tol:
             failures.append(output_key)

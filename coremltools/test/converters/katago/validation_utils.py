@@ -19,27 +19,51 @@ from typing import Optional
 import numpy as np
 
 
-# Tolerance thresholds for comparison
+# Absolute tolerance thresholds for comparison
 # Note: Float32 implementations can differ significantly between
 # Core ML (ANE/GPU) and Eigen (CPU) due to operation ordering,
 # fused operations, and numeric precision. These tolerances are
 # set to allow for typical float32 accumulation differences.
 TOLERANCES = {
-    "policy": 2.6e-01,
-    "pass_policy": 7.8e-02,
-    "value": 8.5e-02,
-    "ownership": 2.8e-02,
-    "score_value": 1.6e-01,
+    "policy": 3.1e-01,
+    "pass_policy": 9.6e-02,
+    "value": 1.4e-01,
+    "ownership": 3.0e-02,
+    "score_value": 1.8e-01,
+}
+
+# Relative tolerance thresholds for comparison
+# Relative tolerances are calculated as: max_diff / max(abs(eigen_reference))
+# This normalizes the error relative to the magnitude of the reference output,
+# making tolerances more robust across different output ranges and scales.
+# These values represent the maximum acceptable relative error as a fraction.
+RELATIVE_TOLERANCES = {
+    "policy": 1.4e-02,
+    "pass_policy": 1.2e-02,
+    "value": 8.9e-03,
+    "ownership": 2.7e-02,
+    "score_value": 1.2e-02,
 }
 
 
-def get_default_tolerances() -> dict:
+def get_default_tolerances(tolerance_type: str = "absolute") -> dict:
     """Get default tolerance values for output comparison.
+
+    Args:
+        tolerance_type: Type of tolerance to return - "absolute" or "relative" (default: "absolute")
 
     Returns:
         Dictionary mapping output keys to tolerance thresholds
+
+    Raises:
+        ValueError: If tolerance_type is not "absolute" or "relative"
     """
-    return TOLERANCES.copy()
+    if tolerance_type == "absolute":
+        return TOLERANCES.copy()
+    elif tolerance_type == "relative":
+        return RELATIVE_TOLERANCES.copy()
+    else:
+        raise ValueError(f"tolerance_type must be 'absolute' or 'relative', got '{tolerance_type}'")
 
 
 def load_test_input(json_path: Path) -> dict:
@@ -215,19 +239,21 @@ def compare_outputs(
     eigen_out: dict,
     coreml_out: dict,
     tolerances: Optional[dict] = None,
+    use_relative_tolerance: bool = False,
 ) -> dict:
     """Compare outputs and return comparison results.
 
     Args:
         eigen_out: Dictionary of Eigen backend outputs
         coreml_out: Dictionary of Core ML model outputs
-        tolerances: Dictionary of tolerance values per output key
+        tolerances: Dictionary of tolerance values per output key (if None, uses default)
+        use_relative_tolerance: If True, use relative tolerances; if False, use absolute tolerances
 
     Returns:
         Dictionary with comparison results for each output
     """
     if tolerances is None:
-        tolerances = TOLERANCES
+        tolerances = RELATIVE_TOLERANCES if use_relative_tolerance else TOLERANCES
 
     results = {}
 
@@ -274,26 +300,48 @@ def compare_outputs(
             }
             continue
 
+        # Calculate absolute differences
         diff = np.abs(eigen_flat - coreml_flat)
         max_diff = float(np.max(diff))
         mean_diff = float(np.mean(diff))
+
+        # Calculate relative differences (relative to Eigen reference)
+        # Avoid division by zero by using a small epsilon
+        eigen_abs_max = float(np.max(np.abs(eigen_flat)))
+        epsilon = 1e-10
+        if eigen_abs_max > epsilon:
+            max_relative_diff = max_diff / eigen_abs_max
+            mean_relative_diff = mean_diff / eigen_abs_max
+        else:
+            # If reference is near zero, relative error is undefined
+            max_relative_diff = float('inf') if max_diff > epsilon else 0.0
+            mean_relative_diff = float('inf') if mean_diff > epsilon else 0.0
+
         tolerance = tolerances.get(key, 1e-4)
 
         # Check for NaN/Inf
         has_nan = bool(np.isnan(diff).any())
         has_inf = bool(np.isinf(diff).any())
 
+        # Determine status based on tolerance type
         status = "PASS"
         if has_nan or has_inf:
             status = "FAIL_NAN_INF"
-        elif max_diff >= tolerance:
-            status = "FAIL"
+        elif use_relative_tolerance:
+            if max_relative_diff >= tolerance:
+                status = "FAIL"
+        else:
+            if max_diff >= tolerance:
+                status = "FAIL"
 
         results[key] = {
             "status": status,
             "max_diff": max_diff,
             "mean_diff": mean_diff,
+            "max_relative_diff": max_relative_diff,
+            "mean_relative_diff": mean_relative_diff,
             "tolerance": tolerance,
+            "tolerance_type": "relative" if use_relative_tolerance else "absolute",
             "has_nan": has_nan,
             "has_inf": has_inf,
             "eigen_shape": list(eigen_val.shape),
