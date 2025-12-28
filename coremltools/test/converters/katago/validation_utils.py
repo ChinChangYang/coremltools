@@ -25,11 +25,11 @@ import numpy as np
 # fused operations, and numeric precision. These tolerances are
 # set to allow for typical float32 accumulation differences.
 TOLERANCES = {
-    "policy": 2.2e-03,
-    "pass_policy": 6.0e-04,
-    "value": 2.4e-03,
-    "ownership": 1.8e-04,
-    "score_value": 1.7e-03,
+    "policy": 2.6e-01,
+    "pass_policy": 7.8e-02,
+    "value": 8.5e-02,
+    "ownership": 2.8e-02,
+    "score_value": 1.6e-01,
 }
 
 
@@ -89,7 +89,10 @@ def run_coreml_model(model_path: str, inputs: dict) -> dict:
         print("Error: coremltools not installed. Please install it first.")
         sys.exit(1)
 
-    model = ct.models.MLModel(model_path)
+    model = ct.models.MLModel(
+        model_path,
+        compute_units=ct.ComputeUnit.CPU_AND_NE,
+    )
 
     result = model.predict({
         "spatial_input": inputs["spatial"],

@@ -356,8 +356,9 @@ def main():
                 args.model_bin,
                 board_x_size=board_size,
                 board_y_size=board_size,
-                minimum_deployment_target=ct.target.iOS15,
-                compute_precision=ct.precision.FLOAT32,
+                minimum_deployment_target=ct.target.iOS18,
+                compute_precision=ct.precision.FLOAT16,
+                compute_units=ct.ComputeUnit.CPU_AND_NE,
             )
             mlmodel.save(model_path)
         else:
