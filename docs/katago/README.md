@@ -631,17 +631,14 @@ The script produces three sections:
 
 **1. Summary Table**
 ```
-Output          Tests    Max Observed    Current Tol     Suggested Tol   Status
---------------------------------------------------------------------------------
-policy          27       5.21e-04        7e-02           7.82e-04        TIGHT
-pass_policy     27       1.11e-04        1e-02           1.67e-04        TIGHT
-value           27       5.72e-05        2e-01           8.58e-05        TIGHT
+Output          Tests    Max Abs      Max Rel      Cur Tol      Sug Tol      Status
+-----------------------------------------------------------------------------------------------
+policy          51       2.06e-01     9.05e-03     3.00e-01     3.09e-01     OK
+pass_policy     51       6.58e-02     8.55e-03     9.50e-02     9.57e-02     OK
+value           51       1.20e-01     6.31e-03     1.30e-01     1.39e-01     OK
 ```
 
 - **Tests**: Number of test cases analyzed
-- **Max Observed**: Highest max_diff seen across all tests
-- **Current Tol**: Current tolerance (from validation_utils.py)
-- **Suggested Tol**: Recommended tolerance (P99 × 1.5 safety margin)
 - **Status**:
   - `FAIL`: Max observed exceeds current tolerance (tests would fail)
   - `TIGHT`: Suggested tolerance is lower (current tolerance is conservative)
@@ -659,7 +656,7 @@ Provides code snippet for updating `TOLERANCES` in `validation_utils.py`.
 
 **Use Case 1: Validating Converter Changes**
 
-When making changes to the converter (e.g., changing convolution padding from `custom` to `same`):
+When making changes to the converter:
 
 ```bash
 # Run tolerance analysis to see current error values
@@ -819,9 +816,9 @@ python scripts/benchmark_inference.py \
 ```
 
 **Expected performance (M1/M2/M3/M4 Mac):**
-- CPU_ONLY: ~150-200ms median
-- CPU_AND_NE: ~40-50ms median (3-4x faster)
-- ALL: Similar to CPU_AND_NE for this model
+- CPU_ONLY: ~30-60ms median
+- CPU_AND_NE: ~6-12ms median (4-6x faster)
+- ALL: ~11-22ms median
 
 ### Advanced Usage
 

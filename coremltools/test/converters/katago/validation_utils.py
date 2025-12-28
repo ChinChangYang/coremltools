@@ -25,10 +25,10 @@ import numpy as np
 # fused operations, and numeric precision. These tolerances are
 # set to allow for typical float32 accumulation differences.
 TOLERANCES = {
-    "policy": 3.1e-01,
-    "pass_policy": 9.6e-02,
-    "value": 1.4e-01,
-    "ownership": 3.0e-02,
+    "policy": 3.0e-01,
+    "pass_policy": 9.5e-02,
+    "value": 1.3e-01,
+    "ownership": 2.9e-02,
     "score_value": 1.8e-01,
 }
 
@@ -38,11 +38,11 @@ TOLERANCES = {
 # making tolerances more robust across different output ranges and scales.
 # These values represent the maximum acceptable relative error as a fraction.
 RELATIVE_TOLERANCES = {
-    "policy": 1.4e-02,
-    "pass_policy": 1.2e-02,
-    "value": 8.9e-03,
-    "ownership": 2.7e-02,
-    "score_value": 1.2e-02,
+    "policy": 1.3e-02,
+    "pass_policy": 1.1e-02,
+    "value": 8.8e-03,
+    "ownership": 2.6e-02,
+    "score_value": 1.1e-02,
 }
 
 

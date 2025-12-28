@@ -317,8 +317,8 @@ Examples:
     parser.add_argument(
         "--test-inputs",
         type=str,
-        default="test_inputs",
-        help="Directory containing test input JSON files (default: test_inputs)"
+        default="test_inputs/19x19",
+        help="Directory containing test input JSON files (default: test_inputs/19x19)"
     )
 
     parser.add_argument(
