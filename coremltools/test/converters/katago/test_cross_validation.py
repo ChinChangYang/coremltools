@@ -88,7 +88,7 @@ class TestKataGoCrossValidation:
         if eigen_out is None:
             pytest.fail("Eigen backend execution failed")
 
-        # Compare outputs
+        # Compare outputs with default tolerances
         tolerances = get_default_tolerances()
         results = compare_outputs(eigen_out, coreml_out, tolerances)
 
@@ -149,7 +149,7 @@ class TestKataGoCrossValidation:
         if eigen_out is None:
             pytest.fail("Eigen backend execution failed")
 
-        # Compare outputs
+        # Compare outputs with default tolerances
         results = compare_outputs(eigen_out, coreml_out)
 
         # Assert all outputs pass

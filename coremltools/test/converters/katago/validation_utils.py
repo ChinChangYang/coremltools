@@ -6,7 +6,8 @@
 """Validation utilities for KataGo Core ML cross-validation tests.
 
 This module provides reusable functions for comparing Core ML model outputs
-against the KataGo Eigen backend, extracted from scripts/validate_coreml.py.
+against the KataGo Eigen backend using relative tolerances for robust
+cross-platform validation.
 """
 
 import json
@@ -14,56 +15,36 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
+if TYPE_CHECKING:
+    import coremltools as ct
 
-# Absolute tolerance thresholds for comparison
-# Note: Float32 implementations can differ significantly between
-# Core ML (ANE/GPU) and Eigen (CPU) due to operation ordering,
-# fused operations, and numeric precision. These tolerances are
-# set to allow for typical float32 accumulation differences.
-TOLERANCES = {
-    "policy": 3.0e-01,
-    "pass_policy": 9.5e-02,
-    "value": 1.3e-01,
-    "ownership": 2.9e-02,
-    "score_value": 1.8e-01,
-}
 
-# Relative tolerance thresholds for comparison
-# Relative tolerances are calculated as: max_diff / max(abs(eigen_reference))
+# Tolerance thresholds for comparison
+# Tolerances are calculated as: max_diff / max(abs(eigen_reference))
 # This normalizes the error relative to the magnitude of the reference output,
-# making tolerances more robust across different output ranges and scales.
-# These values represent the maximum acceptable relative error as a fraction.
-RELATIVE_TOLERANCES = {
-    "policy": 1.3e-02,
-    "pass_policy": 1.1e-02,
-    "value": 8.8e-03,
-    "ownership": 2.6e-02,
-    "score_value": 1.1e-02,
+# making tolerances robust across different output ranges and scales.
+# Values represent the maximum acceptable relative error as a fraction.
+# Example: 1.3e-02 means maximum 1.3% relative error is acceptable.
+TOLERANCES = {
+    "policy": 1.3e-02,       # 1.3% relative error
+    "pass_policy": 1.1e-02,  # 1.1% relative error
+    "value": 8.8e-03,        # 0.88% relative error
+    "ownership": 2.6e-02,    # 2.6% relative error
+    "score_value": 1.1e-02,  # 1.1% relative error
 }
 
 
-def get_default_tolerances(tolerance_type: str = "absolute") -> dict:
+def get_default_tolerances() -> dict:
     """Get default tolerance values for output comparison.
 
-    Args:
-        tolerance_type: Type of tolerance to return - "absolute" or "relative" (default: "absolute")
-
     Returns:
-        Dictionary mapping output keys to tolerance thresholds
-
-    Raises:
-        ValueError: If tolerance_type is not "absolute" or "relative"
+        Dictionary mapping output keys to relative tolerance thresholds
     """
-    if tolerance_type == "absolute":
-        return TOLERANCES.copy()
-    elif tolerance_type == "relative":
-        return RELATIVE_TOLERANCES.copy()
-    else:
-        raise ValueError(f"tolerance_type must be 'absolute' or 'relative', got '{tolerance_type}'")
+    return TOLERANCES.copy()
 
 
 def load_test_input(json_path: Path) -> dict:
@@ -97,26 +78,35 @@ def load_test_input(json_path: Path) -> dict:
     }
 
 
-def run_coreml_model(model_path: str, inputs: dict) -> dict:
+def run_coreml_model(
+    model_path: str,
+    inputs: dict,
+    model: Optional["ct.models.MLModel"] = None,
+) -> dict:
     """Run Core ML model inference.
 
     Args:
         model_path: Path to .mlpackage Core ML model
         inputs: Dictionary with spatial, global, mask inputs
+        model: Optional pre-loaded Core ML model instance. If provided, this model
+               will be used instead of loading from model_path. This improves performance
+               when running inference on multiple inputs with the same model.
 
     Returns:
         Dictionary of output arrays with keys: policy, pass_policy, value, ownership, score_value
     """
-    try:
-        import coremltools as ct
-    except ImportError:
-        print("Error: coremltools not installed. Please install it first.")
-        sys.exit(1)
+    # Load model if not provided (supports both cached and fresh loading)
+    if model is None:
+        try:
+            import coremltools as ct
+        except ImportError:
+            print("Error: coremltools not installed. Please install it first.")
+            sys.exit(1)
 
-    model = ct.models.MLModel(
-        model_path,
-        compute_units=ct.ComputeUnit.CPU_AND_NE,
-    )
+        model = ct.models.MLModel(
+            model_path,
+            compute_units=ct.ComputeUnit.CPU_AND_NE,
+        )
 
     result = model.predict({
         "spatial_input": inputs["spatial"],
@@ -239,21 +229,19 @@ def compare_outputs(
     eigen_out: dict,
     coreml_out: dict,
     tolerances: Optional[dict] = None,
-    use_relative_tolerance: bool = False,
 ) -> dict:
     """Compare outputs and return comparison results.
 
     Args:
         eigen_out: Dictionary of Eigen backend outputs
         coreml_out: Dictionary of Core ML model outputs
-        tolerances: Dictionary of tolerance values per output key (if None, uses default)
-        use_relative_tolerance: If True, use relative tolerances; if False, use absolute tolerances
+        tolerances: Dictionary of relative tolerance values per output key (if None, uses default)
 
     Returns:
         Dictionary with comparison results for each output
     """
     if tolerances is None:
-        tolerances = RELATIVE_TOLERANCES if use_relative_tolerance else TOLERANCES
+        tolerances = TOLERANCES
 
     results = {}
 
@@ -323,16 +311,12 @@ def compare_outputs(
         has_nan = bool(np.isnan(diff).any())
         has_inf = bool(np.isinf(diff).any())
 
-        # Determine status based on tolerance type
+        # Determine status based on relative tolerance
         status = "PASS"
         if has_nan or has_inf:
             status = "FAIL_NAN_INF"
-        elif use_relative_tolerance:
-            if max_relative_diff >= tolerance:
-                status = "FAIL"
-        else:
-            if max_diff >= tolerance:
-                status = "FAIL"
+        elif max_relative_diff >= tolerance:
+            status = "FAIL"
 
         results[key] = {
             "status": status,
@@ -341,7 +325,6 @@ def compare_outputs(
             "max_relative_diff": max_relative_diff,
             "mean_relative_diff": mean_relative_diff,
             "tolerance": tolerance,
-            "tolerance_type": "relative" if use_relative_tolerance else "absolute",
             "has_nan": has_nan,
             "has_inf": has_inf,
             "eigen_shape": list(eigen_val.shape),

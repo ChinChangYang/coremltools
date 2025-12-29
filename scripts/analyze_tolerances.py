@@ -61,7 +61,6 @@ def collect_test_statistics(
     katago_exe: str,
     test_inputs_dir: Path,
     eliminate_identity_mask: bool,
-    use_relative_tolerance: bool = False,
 ) -> List[Dict]:
     """Run all tests for a board size and collect statistics.
 
@@ -72,7 +71,6 @@ def collect_test_statistics(
         katago_exe: Path to KataGo executable
         test_inputs_dir: Directory containing test input JSON files
         eliminate_identity_mask: Value of eliminate_identity_mask used for this model
-        use_relative_tolerance: If True, use relative tolerances for comparison
 
     Returns:
         List of dictionaries with test results (one per test case)
@@ -81,6 +79,22 @@ def collect_test_statistics(
     test_files = [f for f in test_files if f.name != "index.json"]
 
     results = []
+
+    # Load Core ML model once for all test cases (performance optimization)
+    # This eliminates redundant disk I/O and initialization overhead
+    try:
+        import coremltools as ct
+    except ImportError:
+        print("Error: coremltools not installed. Please install it first.")
+        import sys
+        sys.exit(1)
+
+    print(f"  Loading Core ML model: {Path(model_path).name}")
+    model = ct.models.MLModel(
+        model_path,
+        compute_units=ct.ComputeUnit.CPU_AND_NE,
+    )
+    print(f"  Model loaded successfully")
 
     for test_file in test_files:
         print(f"  Running: {test_file.stem}")
@@ -94,14 +108,15 @@ def collect_test_statistics(
             continue
 
         try:
-            coreml_out = run_coreml_model(model_path, inputs)
+            # Pass pre-loaded model for performance
+            coreml_out = run_coreml_model(model_path, inputs, model=model)
             eigen_out = run_eigen_backend(katago_bin, inputs, katago_exe)
 
             if eigen_out is None:
                 print(f"    Skipped (Eigen backend failed)")
                 continue
 
-            comparison = compare_outputs(eigen_out, coreml_out, use_relative_tolerance=use_relative_tolerance)
+            comparison = compare_outputs(eigen_out, coreml_out)
 
             results.append({
                 "test_case": test_file.stem,
@@ -188,51 +203,35 @@ def aggregate_statistics(all_results: List[Dict]) -> Dict:
     return stats
 
 
-def suggest_tolerances(stats: Dict, safety_margin: float = 1.5, tolerance_type: str = "absolute") -> Dict:
+def suggest_tolerances(stats: Dict, safety_margin: float = 1.5) -> Dict:
     """Suggest minimum tolerances with safety margin.
 
     Args:
         stats: Statistics dictionary from aggregate_statistics()
-        safety_margin: Multiplier for P99 max_diff (default: 1.5)
-        tolerance_type: Type of tolerance - "absolute" or "relative" (default: "absolute")
+        safety_margin: Multiplier for P99 max_relative_diff (default: 1.5)
 
     Returns:
-        Dictionary of suggested tolerances per output type
-
-    Raises:
-        ValueError: If tolerance_type is not "absolute" or "relative"
+        Dictionary of suggested relative tolerances per output type
     """
-    if tolerance_type not in ("absolute", "relative"):
-        raise ValueError(f"tolerance_type must be 'absolute' or 'relative', got '{tolerance_type}'")
-
     suggested = {}
     for output_key, values in stats.items():
-        if tolerance_type == "absolute":
-            baseline = values["max_diff"]["p99"]
-        else:  # relative
-            baseline = values["max_relative_diff"]["p99"]
+        baseline = values["max_relative_diff"]["p99"]
         suggested[output_key] = baseline * safety_margin
     return suggested
 
 
 def print_report(
     stats: Dict,
-    suggested_absolute_tolerances: Dict,
-    suggested_relative_tolerances: Dict,
-    current_absolute_tolerances: Dict,
-    current_relative_tolerances: Dict,
-    use_relative_tolerance: bool = False,
+    suggested_tolerances: Dict,
+    current_tolerances: Dict,
     summary_only: bool = False,
 ):
     """Print detailed analysis report.
 
     Args:
         stats: Statistics dictionary
-        suggested_absolute_tolerances: Suggested absolute tolerance values
-        suggested_relative_tolerances: Suggested relative tolerance values
-        current_absolute_tolerances: Current absolute tolerance values
-        current_relative_tolerances: Current relative tolerance values
-        use_relative_tolerance: If True, comparisons use relative tolerances
+        suggested_tolerances: Suggested tolerance values
+        current_tolerances: Current tolerance values
         summary_only: If True, only print summary table
     """
 
@@ -242,26 +241,17 @@ def print_report(
 
     # Summary table
     print("\nSummary (across all test cases):\n")
-    print(f"Tolerance Mode: {'Relative' if use_relative_tolerance else 'Absolute'}\n")
-    print(f"{'Output':<15} {'Tests':<8} {'Max Abs':<12} {'Max Rel':<12} {'Cur Tol':<12} {'Sug Tol':<12} {'Status'}")
-    print("-" * 95)
+    print(f"{'Output':<15} {'Tests':<8} {'Max Diff':<12} {'Cur Tol':<12} {'Sug Tol':<12} {'Status'}")
+    print("-" * 75)
 
     for output_key in ["policy", "pass_policy", "value", "ownership", "score_value"]:
         if output_key not in stats:
             continue
 
         num_tests = stats[output_key]["num_tests"]
-        max_abs_observed = stats[output_key]["max_diff"]["max"]
-        max_rel_observed = stats[output_key]["max_relative_diff"]["max"]
-
-        if use_relative_tolerance:
-            current_tol = current_relative_tolerances[output_key]
-            suggested_tol = suggested_relative_tolerances[output_key]
-            max_observed = max_rel_observed
-        else:
-            current_tol = current_absolute_tolerances[output_key]
-            suggested_tol = suggested_absolute_tolerances[output_key]
-            max_observed = max_abs_observed
+        max_observed = stats[output_key]["max_relative_diff"]["max"]
+        current_tol = current_tolerances[output_key]
+        suggested_tol = suggested_tolerances[output_key]
 
         if max_observed > current_tol:
             status = "FAIL"
@@ -270,7 +260,7 @@ def print_report(
         else:
             status = "OK"
 
-        print(f"{output_key:<15} {num_tests:<8} {max_abs_observed:<12.2e} {max_rel_observed:<12.2e} {current_tol:<12.2e} {suggested_tol:<12.2e} {status}")
+        print(f"{output_key:<15} {num_tests:<8} {max_observed:<12.2e} {current_tol:<12.2e} {suggested_tol:<12.2e} {status}")
 
     if summary_only:
         return
@@ -321,34 +311,21 @@ def print_report(
     print("Recommendations")
     print("=" * 80)
 
-    print("\nSuggested ABSOLUTE tolerance updates (validation_utils.py):")
+    print("\nSuggested tolerance updates (validation_utils.py):")
     print("```python")
     print("TOLERANCES = {")
     for output_key in ["policy", "pass_policy", "value", "ownership", "score_value"]:
-        if output_key in suggested_absolute_tolerances:
-            suggested = suggested_absolute_tolerances[output_key]
-            print(f"    \"{output_key}\": {suggested:.1e},")
-    print("}")
-    print("```")
-
-    print("\nSuggested RELATIVE tolerance updates (validation_utils.py):")
-    print("```python")
-    print("RELATIVE_TOLERANCES = {")
-    for output_key in ["policy", "pass_policy", "value", "ownership", "score_value"]:
-        if output_key in suggested_relative_tolerances:
-            suggested = suggested_relative_tolerances[output_key]
-            print(f"    \"{output_key}\": {suggested:.1e},")
+        if output_key in suggested_tolerances:
+            suggested = suggested_tolerances[output_key]
+            print(f"    \"{output_key}\": {suggested:.1e},  # {suggested*100:.2f}% relative error")
     print("}")
     print("```")
 
     print("\nInterpretation:")
-    print("  - Suggested tolerances use P99 max_diff * 1.5 safety margin")
+    print("  - Suggested tolerances use P99 max_relative_diff * 1.5 safety margin")
     print("  - FAIL: Current tolerance exceeded (tests would fail)")
     print("  - TIGHT: Suggested tolerance lower than current (can tighten)")
     print("  - OK: Current tolerance appropriate")
-    print("\nTolerance Types:")
-    print("  - Absolute: Direct threshold on max difference (simpler)")
-    print("  - Relative: Threshold on max_diff / max(abs(eigen_reference)) (scales with magnitude)")
 
 
 def main():
@@ -397,11 +374,6 @@ def main():
         choices=["true", "false", "both"],
         default="both",
         help="Test with eliminate_identity_mask=True, False, or both (default: both)"
-    )
-    parser.add_argument(
-        "--use-relative-tolerance",
-        action="store_true",
-        help="Use relative tolerances instead of absolute tolerances"
     )
     args = parser.parse_args()
 
@@ -503,7 +475,6 @@ def main():
                 args.katago_exe,
                 test_inputs_dir,
                 eliminate_identity_mask,
-                args.use_relative_tolerance,
             )
 
             all_results.extend(results)
@@ -517,21 +488,16 @@ def main():
     print(f"\nAggregating statistics from {len(all_results)} tests...")
     stats = aggregate_statistics(all_results)
 
-    # Get current tolerances (both types)
-    current_absolute_tolerances = get_default_tolerances("absolute")
-    current_relative_tolerances = get_default_tolerances("relative")
+    # Get current tolerances
+    current_tolerances = get_default_tolerances()
 
-    # Generate suggestions (both types)
-    suggested_absolute_tolerances = suggest_tolerances(stats, safety_margin=args.safety_margin, tolerance_type="absolute")
-    suggested_relative_tolerances = suggest_tolerances(stats, safety_margin=args.safety_margin, tolerance_type="relative")
+    # Generate suggestions
+    suggested_tolerances = suggest_tolerances(stats, safety_margin=args.safety_margin)
 
     print_report(
         stats,
-        suggested_absolute_tolerances,
-        suggested_relative_tolerances,
-        current_absolute_tolerances,
-        current_relative_tolerances,
-        args.use_relative_tolerance,
+        suggested_tolerances,
+        current_tolerances,
         args.summary_only,
     )
 
@@ -541,12 +507,9 @@ def main():
             "num_tests": len(all_results),
             "board_sizes": list(set(r["board_size"] for r in all_results)),
             "eliminate_identity_mask_settings": list(set(r["eliminate_identity_mask"] for r in all_results)),
-            "tolerance_mode": "relative" if args.use_relative_tolerance else "absolute",
             "statistics": stats,
-            "current_absolute_tolerances": current_absolute_tolerances,
-            "current_relative_tolerances": current_relative_tolerances,
-            "suggested_absolute_tolerances": suggested_absolute_tolerances,
-            "suggested_relative_tolerances": suggested_relative_tolerances,
+            "current_tolerances": current_tolerances,
+            "suggested_tolerances": suggested_tolerances,
             "safety_margin": args.safety_margin,
             "raw_results": all_results,
         }
@@ -558,15 +521,8 @@ def main():
 
     # Exit status
     failures = []
-    if args.use_relative_tolerance:
-        current_tolerances = current_relative_tolerances
-        diff_key = "max_relative_diff"
-    else:
-        current_tolerances = current_absolute_tolerances
-        diff_key = "max_diff"
-
     for output_key, values in stats.items():
-        max_observed = values[diff_key]["max"]
+        max_observed = values["max_relative_diff"]["max"]
         current_tol = current_tolerances[output_key]
         if max_observed > current_tol:
             failures.append(output_key)
