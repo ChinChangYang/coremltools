@@ -397,7 +397,6 @@ def main():
         possible_paths = [
             repo_root / "KataGo" / "cpp" / "build" / "katago",
             repo_root.parent / "KataGo" / "cpp" / "build" / "katago",
-            repo_root.parent / "KataGo-reference" / "cpp" / "build" / "katago",
         ]
         for path in possible_paths:
             if path.exists():
