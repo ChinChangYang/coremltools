@@ -56,7 +56,8 @@ def load_test_input(json_path: Path) -> dict:
         json_path: Path to JSON file containing test input
 
     Returns:
-        Dictionary with keys: name, description, spatial, global, mask
+        Dictionary with keys: name, description, spatial, global, mask,
+        and optionally 'meta' for human SL networks
     """
     with open(json_path) as f:
         data = json.load(f)
@@ -71,13 +72,21 @@ def load_test_input(json_path: Path) -> dict:
     global_in = global_in.reshape(1, -1)  # [1, G]
     mask = mask.reshape(1, 1, *mask.shape)  # [1, 1, H, W]
 
-    return {
+    result = {
         "name": data.get("name", json_path.stem),
         "description": data.get("description", ""),
         "spatial": spatial,
         "global": global_in,
         "mask": mask,
     }
+
+    # Load metadata input if present (for human SL networks)
+    if "meta_input" in data:
+        meta = np.array(data["meta_input"], dtype=np.float32)
+        meta = meta.reshape(1, -1)  # [1, M]
+        result["meta"] = meta
+
+    return result
 
 
 def run_coreml_model(
@@ -110,11 +119,18 @@ def run_coreml_model(
             compute_units=ct.ComputeUnit.CPU_AND_NE,
         )
 
-    result = model.predict({
+    # Build prediction inputs
+    predict_inputs = {
         "spatial_input": inputs["spatial"],
         "global_input": inputs["global"],
         "input_mask": inputs["mask"],
-    })
+    }
+
+    # Add metadata input if present (for human SL networks)
+    if "meta" in inputs:
+        predict_inputs["meta_input"] = inputs["meta"]
+
+    result = model.predict(predict_inputs)
 
     # Map Core ML output names to standard names
     name_mapping = {
@@ -181,6 +197,10 @@ def run_eigen_backend(
         "global_input": inputs["global"].squeeze(0).tolist(),  # [G]
         "input_mask": inputs["mask"].squeeze(0).squeeze(0).tolist(),  # [H, W]
     }
+
+    # Add metadata input if present (for human SL networks)
+    if "meta" in inputs:
+        input_json["meta_input"] = inputs["meta"].squeeze(0).tolist()  # [M]
 
     # Write to temp file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -388,14 +408,14 @@ def compute_input_hash(inputs: dict) -> str:
     """Compute hash of input arrays for cache validation.
 
     Args:
-        inputs: Dictionary with spatial, global, mask inputs
+        inputs: Dictionary with spatial, global, mask, and optionally meta inputs
 
     Returns:
         First 16 characters of SHA-256 hash of input data
     """
     sha256 = hashlib.sha256()
     for key in sorted(inputs.keys()):
-        if key in ("spatial", "global", "mask"):
+        if key in ("spatial", "global", "mask", "meta"):
             sha256.update(inputs[key].tobytes())
     return sha256.hexdigest()[:16]
 

@@ -155,3 +155,88 @@ def eigen_cache_dir():
     cache_dir = Path(__file__).parent.parent.parent.parent.parent / "test_inputs" / "eigen_cache"
     cache_dir.mkdir(exist_ok=True)
     return cache_dir
+
+
+# ==============================================================================
+# Human SL Network Fixtures
+# ==============================================================================
+
+
+@pytest.fixture(scope="session")
+def human_sl_model_bin():
+    """Path to KataGo human SL .bin.gz model file.
+
+    Returns:
+        str: Path to the human SL model binary
+
+    Skips:
+        If the human SL model binary is not found
+    """
+    model_path = Path(__file__).parent.parent.parent.parent.parent / "KataGo" / "b18c384nbt-humanv0.bin.gz"
+
+    if not model_path.exists():
+        pytest.skip(
+            f"Human SL model not found: {model_path}. "
+            "Download from: https://media.katagotraining.org/uploaded/networks/models_extra/b18c384nbt-humanv0.bin.gz"
+        )
+
+    return str(model_path)
+
+
+@pytest.fixture(scope="session")
+def human_sl_converted_model(tmp_path_factory, human_sl_model_bin):
+    """Convert human SL model to Core ML for 19x19 board (cached per session).
+
+    This fixture converts the human SL model once and reuses it across all
+    test cases.
+
+    Args:
+        tmp_path_factory: Pytest factory for creating temp directories
+        human_sl_model_bin: Path to human SL binary model (from fixture)
+
+    Returns:
+        str: Path to converted .mlpackage model
+    """
+    import coremltools as ct
+    from coremltools.converters.katago import convert
+
+    # Create session-level temp directory
+    tmp_dir = tmp_path_factory.mktemp("human_sl_model")
+    model_path = tmp_dir / "KataGo_HumanSL_19x19.mlpackage"
+
+    if model_path.exists():
+        return str(model_path)
+
+    # Convert model (19x19 only for human SL)
+    mlmodel = convert(
+        human_sl_model_bin,
+        board_x_size=19,
+        board_y_size=19,
+        minimum_deployment_target=ct.target.iOS15,
+        compute_precision=ct.precision.FLOAT32,
+    )
+    mlmodel.save(str(model_path))
+
+    return str(model_path)
+
+
+@pytest.fixture(scope="session")
+def human_sl_test_inputs_dir():
+    """Get test inputs directory for human SL tests (19x19 with metadata).
+
+    Returns:
+        Path: Path to test inputs directory
+
+    Skips:
+        If the test inputs directory doesn't exist
+    """
+    test_dir = Path(__file__).parent / "test_inputs_19x19"
+
+    if not test_dir.exists():
+        pytest.skip(
+            f"Human SL test inputs not found: {test_dir}. "
+            "Run: python scripts/generate_test_inputs.py --with-metadata "
+            "--output coremltools/test/converters/katago/test_inputs_19x19"
+        )
+
+    return test_dir

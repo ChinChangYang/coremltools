@@ -381,6 +381,7 @@ class KataGoModelParser:
     def _parse_sgf_metadata_encoder(self, model_version: int, meta_encoder_version: int) -> SGFMetadataEncoderDesc:
         """Parse SGF metadata encoder."""
         name = self._read_string()
+        num_input_meta_channels = self._read_int()
 
         mul1 = self._parse_matmul_layer()
         bias1 = self._parse_matbias_layer()
@@ -393,7 +394,7 @@ class KataGoModelParser:
         return SGFMetadataEncoderDesc(
             name=name,
             meta_encoder_version=meta_encoder_version,
-            num_input_meta_channels=mul1.in_channels,
+            num_input_meta_channels=num_input_meta_channels,
             mul1=mul1,
             bias1=bias1,
             act1=act1,
@@ -566,7 +567,7 @@ class KataGoModelParser:
                 self._read_int()
 
             if meta_encoder_version > 0:
-                num_input_meta_channels = 7  # SGFMetadata::METADATA_INPUT_NUM_CHANNELS
+                num_input_meta_channels = 192  # SGFMetadata::METADATA_INPUT_NUM_CHANNELS
 
         # Parse trunk, policy head, value head
         trunk = self._parse_trunk(model_version, meta_encoder_version)

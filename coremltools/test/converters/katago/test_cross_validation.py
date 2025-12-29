@@ -181,6 +181,132 @@ class TestKataGoCrossValidation:
             pytest.fail(failure_msg)
 
 
+class TestKataGoHumanSLCrossValidation:
+    """Cross-validation tests for KataGo human SL (supervised learning) networks.
+
+    Human SL networks have a SGFMetadataEncoder that processes 192-channel
+    metadata input (player ranks, time controls, game dates, etc.) and adds
+    it to the trunk features. These tests validate that the metadata encoder
+    is correctly implemented and outputs match the Eigen backend.
+    """
+
+    @pytest.mark.parametrize(
+        "test_case",
+        [
+            "zeros_with_metadata_rank_1d",
+            "zeros_with_metadata_rank_5k",
+            "zeros_with_metadata_rank_10k",
+            "zeros_with_metadata_proyear_2020",
+            "random_with_metadata",
+        ],
+    )
+    def test_human_sl_cross_validation(
+        self,
+        human_sl_converted_model,
+        human_sl_test_inputs_dir,
+        human_sl_model_bin,
+        katago_executable,
+        check_eigen_backend_available,
+        eigen_cache_dir,
+        test_case,
+    ):
+        """Test human SL Core ML model against Eigen backend.
+
+        This test:
+        1. Loads test input with metadata for the specified test case
+        2. Runs inference on both Core ML and Eigen backend
+        3. Compares outputs with predefined tolerances
+        4. Asserts that all outputs match within tolerance
+
+        Args:
+            human_sl_converted_model: Path to converted human SL Core ML model
+            human_sl_test_inputs_dir: Directory containing test inputs with metadata
+            human_sl_model_bin: Path to human SL KataGo binary model
+            katago_executable: Path to KataGo executable
+            check_eigen_backend_available: Fixture that skips if Eigen unavailable
+            eigen_cache_dir: Directory for caching Eigen backend outputs
+            test_case: Test case name (e.g., "zeros_with_metadata_rank_1d")
+        """
+        test_file = human_sl_test_inputs_dir / f"{test_case}.json"
+        if not test_file.exists():
+            pytest.skip(f"Test case '{test_case}' not found")
+
+        inputs = load_test_input(test_file)
+
+        # Verify metadata is present
+        if "meta" not in inputs:
+            pytest.fail(f"Test case '{test_case}' is missing metadata input")
+
+        # Run Core ML model
+        coreml_out = run_coreml_model(human_sl_converted_model, inputs)
+
+        # Run Eigen backend (with caching)
+        eigen_out = run_eigen_backend_cached(
+            human_sl_model_bin, inputs, katago_executable,
+            eigen_cache_dir, test_case, 19
+        )
+        if eigen_out is None:
+            pytest.fail("Eigen backend execution failed")
+
+        # Compare outputs with default tolerances
+        tolerances = get_default_tolerances()
+        results = compare_outputs(eigen_out, coreml_out, tolerances)
+
+        # Assert all outputs pass
+        failures = []
+        for key, result in results.items():
+            status = result["status"]
+            if status != "PASS":
+                failures.append(
+                    f"{key}: {status} - max_diff={result.get('max_diff', 'N/A')}, "
+                    f"max_relative_diff={result.get('max_relative_diff', 'N/A'):.6f}, "
+                    f"tolerance={result.get('tolerance', 'N/A')}"
+                )
+
+        if failures:
+            failure_msg = (
+                f"Human SL cross-validation failed for {test_case}:\n"
+                + "\n".join(f"  - {f}" for f in failures)
+            )
+            pytest.fail(failure_msg)
+
+    def test_human_sl_coreml_inference_smoke_test(
+        self,
+        human_sl_converted_model,
+        human_sl_test_inputs_dir,
+    ):
+        """Smoke test: verify human SL Core ML model can run inference.
+
+        This test loads a metadata test case and runs inference to verify:
+        - Model can execute without errors
+        - All expected outputs are present
+        - No NaN or Inf values in outputs
+
+        Args:
+            human_sl_converted_model: Path to converted human SL Core ML model
+            human_sl_test_inputs_dir: Directory containing test inputs with metadata
+        """
+        test_file = human_sl_test_inputs_dir / "zeros_with_metadata_rank_1d.json"
+        if not test_file.exists():
+            pytest.skip("Human SL test case not found")
+
+        inputs = load_test_input(test_file)
+
+        outputs = run_coreml_model(human_sl_converted_model, inputs)
+
+        # Verify outputs exist and have valid shapes
+        assert "policy" in outputs, "policy output missing"
+        assert "pass_policy" in outputs, "pass_policy output missing"
+        assert "value" in outputs, "value output missing"
+        assert "ownership" in outputs, "ownership output missing"
+        assert "score_value" in outputs, "score_value output missing"
+
+        # Verify no NaN/Inf values
+        for key, value in outputs.items():
+            assert not np.isnan(value).any(), f"{key} contains NaN values"
+            assert not np.isinf(value).any(), f"{key} contains Inf values"
+
+
 class TestKataGoCorMLOnly:
     """Tests that run Core ML inference without Eigen comparison.
 

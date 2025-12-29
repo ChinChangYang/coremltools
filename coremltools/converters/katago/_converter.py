@@ -103,6 +103,7 @@ def convert(
     - spatial_input: Float32 tensor (1, num_input_channels, board_y_size, board_x_size)
     - global_input: Float32 tensor (1, num_input_global_channels)
     - input_mask: Float32 tensor (1, 1, board_y_size, board_x_size)
+    - meta_input: Float32 tensor (1, 192) - only for human SL networks (meta_encoder_version > 0)
 
     And the following outputs:
     - policy: Float32 tensor (1, policy_channels, board_y_size, board_x_size) - move policy logits
@@ -169,6 +170,8 @@ def convert(
             inp.shortDescription = "Global game state features"
         elif inp.name == "input_mask":
             inp.shortDescription = "Valid board positions mask"
+        elif inp.name == "meta_input":
+            inp.shortDescription = "SGF metadata features for human SL networks"
 
     # Update output descriptions
     for out in spec.description.output:

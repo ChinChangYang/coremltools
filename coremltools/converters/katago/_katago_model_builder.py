@@ -22,6 +22,7 @@ from ._katago_types import (
     KataGoModelDesc,
     NestedBottleneckResidualBlockDesc,
     ResidualBlockDesc,
+    SGFMetadataEncoderDesc,
 )
 
 
@@ -71,6 +72,8 @@ class KataGoModelBuilder:
         """
         num_input_ch = self.model_desc.num_input_channels
         num_global_ch = self.model_desc.num_input_global_channels
+        num_meta_ch = self.model_desc.num_input_meta_channels
+        meta_encoder_version = self.model_desc.meta_encoder_version
 
         # Define input specs using configured board dimensions
         input_specs = [
@@ -79,14 +82,27 @@ class KataGoModelBuilder:
             mb.TensorSpec(shape=(1, 1, self.board_y_size, self.board_x_size), dtype=types.fp32),
         ]
 
-        # Build the program using decorator
-        @mb.program(input_specs=input_specs)
-        def katago_model(spatial_input, global_input, input_mask):
-            return self._build_model(spatial_input, global_input, input_mask)
+        # Add metadata input spec if model has metadata encoder (human SL networks)
+        if meta_encoder_version > 0 and num_meta_ch > 0:
+            input_specs.append(
+                mb.TensorSpec(shape=(1, num_meta_ch), dtype=types.fp32)
+            )
 
-        return katago_model
+            # Build the program with metadata input
+            @mb.program(input_specs=input_specs)
+            def katago_model_with_meta(spatial_input, global_input, input_mask, meta_input):
+                return self._build_model(spatial_input, global_input, input_mask, meta_input)
 
-    def _build_model(self, spatial_input, global_input, input_mask):
+            return katago_model_with_meta
+        else:
+            # Build the program without metadata input
+            @mb.program(input_specs=input_specs)
+            def katago_model(spatial_input, global_input, input_mask):
+                return self._build_model(spatial_input, global_input, input_mask, None)
+
+            return katago_model
+
+    def _build_model(self, spatial_input, global_input, input_mask, meta_input=None):
         """
         Build the complete KataGo model.
 
@@ -94,12 +110,13 @@ class KataGoModelBuilder:
             spatial_input: Spatial input tensor [N, C, H, W].
             global_input: Global input tensor [N, G].
             input_mask: Mask tensor [N, 1, H, W].
+            meta_input: Optional metadata input tensor [N, 192] for human SL networks.
 
         Returns:
             Tuple of output tensors (policy, pass_policy, value, ownership, score_value).
         """
         # Build trunk
-        trunk_out = self._build_trunk(spatial_input, global_input, input_mask)
+        trunk_out = self._build_trunk(spatial_input, global_input, input_mask, meta_input)
 
         # Build policy head
         policy, pass_policy = self._build_policy_head(trunk_out, input_mask)
@@ -109,7 +126,7 @@ class KataGoModelBuilder:
 
         return policy, pass_policy, value, ownership, score_value
 
-    def _build_trunk(self, spatial_input, global_input, input_mask):
+    def _build_trunk(self, spatial_input, global_input, input_mask, meta_input=None):
         """
         Build the trunk (backbone) network.
 
@@ -117,6 +134,7 @@ class KataGoModelBuilder:
             spatial_input: Spatial input tensor.
             global_input: Global input tensor.
             input_mask: Mask tensor.
+            meta_input: Optional metadata input tensor [N, 192] for human SL networks.
 
         Returns:
             Trunk output tensor.
@@ -134,6 +152,14 @@ class KataGoModelBuilder:
 
         # Add global bias to spatial features
         x = mb.add(x=x, y=global_bias, name="trunk_add_global")
+
+        # Process SGF metadata encoder if present (human SL networks)
+        if trunk.sgf_metadata_encoder is not None and meta_input is not None:
+            meta_bias = self._build_sgf_metadata_encoder(meta_input, trunk.sgf_metadata_encoder)
+            # Reshape to [N, trunk_ch, 1, 1] for broadcasting
+            meta_bias = mb.reshape(x=meta_bias, shape=[1, -1, 1, 1], name="trunk_meta_reshape")
+            # Add metadata bias to spatial features
+            x = mb.add(x=x, y=meta_bias, name="trunk_add_meta")
 
         # Apply mask
         x = mb.mul(x=x, y=input_mask, name="trunk_initial_mask")
@@ -330,3 +356,37 @@ class KataGoModelBuilder:
         ownership = self.ops.build_conv(v1, value_head.v_ownership_conv, "value_ownership_conv")
 
         return value, ownership, score_value
+
+    def _build_sgf_metadata_encoder(self, meta_input, encoder_desc: SGFMetadataEncoderDesc):
+        """
+        Build SGF metadata encoder (3-layer MLP for human SL networks).
+
+        Architecture:
+            meta_input [N, 192]
+            -> mul1 [N, hidden1]
+            -> bias1 + act1
+            -> mul2 [N, hidden2]
+            -> bias2 + act2
+            -> mul3 [N, trunk_channels]
+
+        Args:
+            meta_input: Metadata input tensor [N, 192].
+            encoder_desc: SGFMetadataEncoderDesc with layer descriptors.
+
+        Returns:
+            Output tensor [N, trunk_channels].
+        """
+        # Layer 1: linear + bias + activation
+        x = self.ops.build_matmul(meta_input, encoder_desc.mul1, "meta_mul1")
+        x = self.ops.build_matbias(x, encoder_desc.bias1, "meta_bias1")
+        x = self.ops.build_activation(x, encoder_desc.act1, "meta_act1")
+
+        # Layer 2: linear + bias + activation
+        x = self.ops.build_matmul(x, encoder_desc.mul2, "meta_mul2")
+        x = self.ops.build_matbias(x, encoder_desc.bias2, "meta_bias2")
+        x = self.ops.build_activation(x, encoder_desc.act2, "meta_act2")
+
+        # Layer 3: linear (output projection to trunk channels)
+        x = self.ops.build_matmul(x, encoder_desc.mul3, "meta_mul3")
+
+        return x
