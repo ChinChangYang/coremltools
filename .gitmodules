@@ -1,0 +1,4 @@
+[submodule "KataGo"]
+	path = KataGo
+	url = https://github.com/ChinChangYang/KataGo.git
+	branch = validation-subcommand
