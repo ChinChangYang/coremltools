@@ -141,28 +141,6 @@ def test_inputs_dir(board_size):
     return test_dir
 
 
-@pytest.fixture
-def test_input_files(test_inputs_dir):
-    """Load all test input JSON files for the board size.
-
-    Args:
-        test_inputs_dir: Path to test inputs directory (from fixture)
-
-    Returns:
-        list[Path]: List of test input JSON file paths
-
-    Raises:
-        pytest.fail: If no test input files are found
-    """
-    files = sorted(test_inputs_dir.glob("*.json"))
-    files = [f for f in files if f.name != "index.json"]
-
-    if not files:
-        pytest.fail(f"No test input files found in {test_inputs_dir}")
-
-    return files
-
-
 @pytest.fixture(scope="session")
 def eigen_cache_dir():
     """Get or create Eigen output cache directory.
