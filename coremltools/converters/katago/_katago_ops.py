@@ -56,6 +56,7 @@ class KataGoOps:
         # Precompute mask-derived constants for full board
         if self.eliminate_identity_mask:
             self.mask_sum_constant = float(self.board_x_size * self.board_y_size)
+            self.mask_sum_reciprocal = 1.0 / self.mask_sum_constant  # Precomputed reciprocal
             sqrt_mask_sum = np.sqrt(self.mask_sum_constant)
             self.mask_sum_sqrt_s14_m01_constant = (sqrt_mask_sum - 14.0) * 0.1
             self.mask_sum_sqrt_s14_m01_sq_s01_constant = (self.mask_sum_sqrt_s14_m01_constant ** 2) - 0.1
@@ -232,7 +233,7 @@ class KataGoOps:
             # Optimized path: all mask values are 1.0
             # Mean pooling = average over all positions
             sum_x = mb.reduce_sum(x=x, axes=[2, 3], keep_dims=True, name=f"{name}_sum")
-            mean_x = mb.real_div(x=sum_x, y=np.float32(self.mask_sum_constant), name=f"{name}_mean")
+            mean_x = mb.mul(x=sum_x, y=np.float32(self.mask_sum_reciprocal), name=f"{name}_mean")
 
             # Max pooling (no mask adjustment needed)
             max_x = mb.reduce_max(x=x, axes=[2, 3], keep_dims=True, name=f"{name}_max")
@@ -305,7 +306,7 @@ class KataGoOps:
             # Optimized path: all mask values are 1.0
             # Mean pooling = average over all positions
             sum_x = mb.reduce_sum(x=x, axes=[2, 3], keep_dims=True, name=f"{name}_sum")
-            mean_x = mb.real_div(x=sum_x, y=np.float32(self.mask_sum_constant), name=f"{name}_mean")
+            mean_x = mb.mul(x=sum_x, y=np.float32(self.mask_sum_reciprocal), name=f"{name}_mean")
 
             # Feature 2: Mean * (sqrt(count) - 14) * 0.1 = mean * 0.5 (precomputed)
             mean_scaled_x = mb.mul(x=mean_x, y=np.float32(self.mask_sum_sqrt_s14_m01_constant), name=f"{name}_mean_scaled")
