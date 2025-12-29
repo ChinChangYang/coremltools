@@ -657,6 +657,157 @@ python scripts/analyze_tolerances.py --safety-margin 1.1
 
 **Recommended:** Use 1.5× for production, 2.0× for frequent model changes.
 
+### Analyzing Human SL Models
+
+The tolerance analysis script also supports KataGo human SL (supervised learning) models, which include a 192-channel metadata input for player ranks, time controls, and game information.
+
+#### Human SL Model Requirements
+
+**Download the human SL model:**
+```bash
+cd ~/katago_workspace
+curl -O https://media.katagotraining.org/uploaded/networks/models_extra/b18c384nbt-humanv0.bin.gz
+```
+
+**Model details:**
+- **File size**: ~99MB (vs 271MB for standard model)
+- **Board size**: 19x19 only (human SL networks are trained for 19x19)
+- **Metadata**: 192 channels encoding player ranks, time controls, dates, game sources
+- **Test inputs**: Located in `coremltools/test/converters/katago/test_inputs_19x19/`
+
+#### Running Human SL Analysis
+
+**Analyze human SL model only:**
+```bash
+python scripts/analyze_tolerances.py --model-type human_sl
+```
+
+**Analyze both standard and human SL models:**
+```bash
+python scripts/analyze_tolerances.py --model-type both --board-size 19 --summary-only
+```
+
+**Example output for human SL model:**
+```
+Using KataGo model: KataGo/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
+Using human SL model: KataGo/b18c384nbt-humanv0.bin.gz
+Using KataGo executable: KataGo/cpp/build/katago
+
+Analyzing human SL 19x19 with eliminate_identity_mask=True...
+  Converting model to KataGo_HumanSL_19x19_mask_true.mlpackage...
+  Loading Core ML model: KataGo_HumanSL_19x19_mask_true.mlpackage
+  Model loaded successfully
+  Running: zeros_with_metadata_rank_1d
+  Running: zeros_with_metadata_rank_5k
+  Running: zeros_with_metadata_rank_10k
+  Running: zeros_with_metadata_proyear_2020
+  Running: random_with_metadata
+  Running: zeros
+  Running: random_seed_42
+  ...
+  Collected 15 test results
+
+================================================================================
+KataGo Cross-Validation Tolerance Analysis
+================================================================================
+
+Summary (across all test cases):
+
+Output          Tests    Max Diff     Cur Tol      Sug Tol      Status
+---------------------------------------------------------------------------
+policy          15       9.12e-03     1.30e-02     1.37e-02     OK
+pass_policy     15       8.61e-03     1.10e-02     1.26e-02     OK
+value           15       6.38e-03     8.80e-03     8.95e-03     OK
+ownership       15       1.89e-02     2.60e-02     2.84e-02     OK
+score_value     15       7.93e-03     1.10e-02     1.19e-02     OK
+```
+
+#### Comparing Standard vs Human SL Models
+
+When using `--model-type both`, the script generates separate statistics for each model type:
+
+```bash
+python scripts/analyze_tolerances.py --model-type both --board-size 19 --output comparison.json
+```
+
+**Example output:**
+```
+================================================================================
+Results for STANDARD models
+================================================================================
+
+Summary (across all test cases):
+
+Output          Tests    Max Diff     Cur Tol      Sug Tol      Status
+---------------------------------------------------------------------------
+policy          9        9.05e-03     1.30e-02     1.36e-02     OK
+pass_policy     9        8.55e-03     1.10e-02     1.24e-02     OK
+value           9        6.31e-03     8.80e-03     8.90e-03     OK
+
+================================================================================
+Results for HUMAN_SL models
+================================================================================
+
+Summary (across all test cases):
+
+Output          Tests    Max Diff     Cur Tol      Sug Tol      Status
+---------------------------------------------------------------------------
+policy          15       9.12e-03     1.30e-02     1.37e-02     OK
+pass_policy     15       8.61e-03     1.10e-02     1.26e-02     OK
+value           15       6.38e-03     8.80e-03     8.95e-03     OK
+```
+
+**Key findings:**
+- Human SL models have similar tolerance requirements to standard models
+- Metadata encoding (192-channel SGFMetadataEncoder) doesn't introduce significant numerical errors
+- Both model types pass with the same tolerance thresholds
+
+#### Advanced Options
+
+**Specify human SL model path explicitly:**
+```bash
+python scripts/analyze_tolerances.py \
+  --model-type human_sl \
+  --human-sl-model-bin /path/to/b18c384nbt-humanv0.bin.gz \
+  --output human_sl_analysis.json
+```
+
+**Test with different eliminate_identity_mask settings:**
+```bash
+# Test only with eliminate_identity_mask=False
+python scripts/analyze_tolerances.py \
+  --model-type human_sl \
+  --eliminate-identity-mask false
+
+# Test both True and False (default)
+python scripts/analyze_tolerances.py \
+  --model-type human_sl \
+  --eliminate-identity-mask both
+```
+
+#### Understanding Human SL Test Cases
+
+The human SL test inputs (in `test_inputs_19x19/`) include:
+
+**Test cases with metadata (5 cases):**
+- `zeros_with_metadata_rank_1d.json` - Empty board, 1 dan player profile
+- `zeros_with_metadata_rank_5k.json` - Empty board, 5 kyu player profile
+- `zeros_with_metadata_rank_10k.json` - Empty board, 10 kyu player profile
+- `zeros_with_metadata_proyear_2020.json` - Empty board, 2020 professional player profile
+- `random_with_metadata.json` - Random board position with 1 dan profile
+
+**Test cases without metadata (9 cases):**
+- Standard test cases (zeros, random_seed_42, corner_stone, etc.)
+- Human SL models can run these without metadata input
+
+**Metadata format:**
+The 192-channel metadata input encodes:
+- Player ranks (68 channels): Thermometer encoding for both players
+- Time controls (12 channels): One-hot encoding + logarithmic time features
+- Game dates (64 channels): Periodic sine/cosine encoding (1800-2023)
+- Game sources (16 channels): One-hot encoding (KGS, GOGOD, etc.)
+- Flags (32 channels): Human/bot, rated/unrated, etc.
+
 ---
 
 ## Performance Benchmarking

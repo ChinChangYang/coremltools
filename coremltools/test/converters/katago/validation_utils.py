@@ -129,6 +129,14 @@ def run_coreml_model(
     # Add metadata input if present (for human SL networks)
     if "meta" in inputs:
         predict_inputs["meta_input"] = inputs["meta"]
+    else:
+        # Check if model requires meta_input (human SL networks)
+        # If so, provide default zero metadata
+        model_spec = model.get_spec()
+        input_names = [input.name for input in model_spec.description.input]
+        if "meta_input" in input_names:
+            # Human SL models use 192-channel metadata input
+            predict_inputs["meta_input"] = np.zeros((1, 192), dtype=np.float32)
 
     result = model.predict(predict_inputs)
 

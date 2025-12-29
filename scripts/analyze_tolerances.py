@@ -61,6 +61,7 @@ def collect_test_statistics(
     katago_exe: str,
     test_inputs_dir: Path,
     eliminate_identity_mask: bool,
+    require_metadata: bool = False,
 ) -> List[Dict]:
     """Run all tests for a board size and collect statistics.
 
@@ -71,6 +72,7 @@ def collect_test_statistics(
         katago_exe: Path to KataGo executable
         test_inputs_dir: Directory containing test input JSON files
         eliminate_identity_mask: Value of eliminate_identity_mask used for this model
+        require_metadata: If True, skip test cases without metadata (for human SL models)
 
     Returns:
         List of dictionaries with test results (one per test case)
@@ -100,6 +102,11 @@ def collect_test_statistics(
         print(f"  Running: {test_file.stem}")
 
         inputs = load_test_input(test_file)
+
+        # Skip test cases without metadata if required (human SL models)
+        if require_metadata and "meta" not in inputs:
+            print(f"    Skipped (test case does not have metadata, required for human SL model)")
+            continue
 
         # Skip partial mask tests when eliminate_identity_mask=True
         # (the optimization assumes full board with all mask values = 1.0)
@@ -201,6 +208,75 @@ def aggregate_statistics(all_results: List[Dict]) -> Dict:
         }
 
     return stats
+
+
+def analyze_human_sl_model(
+    model_bin: str,
+    katago_exe: str,
+    repo_root: Path,
+    mask_settings: List[bool],
+) -> List[Dict]:
+    """Analyze human SL model tolerances.
+
+    Args:
+        model_bin: Path to human SL .bin.gz model
+        katago_exe: Path to KataGo executable
+        repo_root: Repository root directory
+        mask_settings: List of eliminate_identity_mask settings to test
+
+    Returns:
+        List of test result dictionaries
+    """
+    import coremltools as ct
+    from coremltools.converters.katago import convert
+
+    all_results = []
+    board_size = 19  # Human SL models are 19x19 only
+
+    for eliminate_identity_mask in mask_settings:
+        mask_str = "mask_true" if eliminate_identity_mask else "mask_false"
+        print(f"\nAnalyzing human SL 19x19 with eliminate_identity_mask={eliminate_identity_mask}...")
+
+        model_path = str(repo_root / f"KataGo_HumanSL_19x19_{mask_str}.mlpackage")
+
+        if not Path(model_path).exists():
+            print(f"  Converting model to {model_path}...")
+            mlmodel = convert(
+                model_bin,
+                board_x_size=19,
+                board_y_size=19,
+                eliminate_identity_mask=eliminate_identity_mask,
+                minimum_deployment_target=ct.target.iOS18,
+                compute_precision=ct.precision.FLOAT16,
+                compute_units=ct.ComputeUnit.CPU_AND_NE,
+            )
+            mlmodel.save(model_path)
+        else:
+            print(f"  Using existing model: {model_path}")
+
+        # Human SL test inputs are in test_inputs_19x19/
+        test_inputs_dir = repo_root / "coremltools" / "test" / "converters" / "katago" / "test_inputs_19x19"
+
+        if not test_inputs_dir.exists():
+            print(f"  Skipping (test inputs not found: {test_inputs_dir})")
+            print(f"  Run: python scripts/generate_test_inputs.py --with-metadata \\")
+            print(f"       --output coremltools/test/converters/katago/test_inputs_19x19")
+            continue
+
+        results = collect_test_statistics(
+            board_size,
+            model_path,
+            model_bin,
+            katago_exe,
+            test_inputs_dir,
+            eliminate_identity_mask,
+            require_metadata=True,  # Human SL models require metadata
+        )
+
+        all_results.extend(results)
+        print(f"  Collected {len(results)} test results")
+
+    return all_results
 
 
 def suggest_tolerances(stats: Dict, safety_margin: float = 1.5) -> Dict:
@@ -375,6 +451,19 @@ def main():
         default="both",
         help="Test with eliminate_identity_mask=True, False, or both (default: both)"
     )
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        choices=["standard", "human_sl", "both"],
+        default="standard",
+        help="Model type to analyze: standard, human_sl, or both (default: standard)"
+    )
+    parser.add_argument(
+        "--human-sl-model-bin",
+        type=str,
+        default=None,
+        help="Path to human SL KataGo .bin.gz model file (default: auto-detect)"
+    )
     args = parser.parse_args()
 
     # Auto-detect paths
@@ -418,7 +507,28 @@ def main():
         print("  - ../KataGo/cpp/build/katago")
         sys.exit(1)
 
+    # Auto-detect human SL model path if needed
+    if args.model_type in ["human_sl", "both"]:
+        if args.human_sl_model_bin is None:
+            possible_paths = [
+                repo_root / "KataGo" / "b18c384nbt-humanv0.bin.gz",
+                repo_root.parent / "KataGo" / "b18c384nbt-humanv0.bin.gz",
+                repo_root / "b18c384nbt-humanv0.bin.gz",
+            ]
+            for path in possible_paths:
+                if path.exists():
+                    args.human_sl_model_bin = str(path)
+                    break
+
+        if args.human_sl_model_bin is None or not Path(args.human_sl_model_bin).exists():
+            print(f"Error: Human SL model not found")
+            print("Please specify --human-sl-model-bin or download from:")
+            print("  https://media.katagotraining.org/uploaded/networks/models_extra/b18c384nbt-humanv0.bin.gz")
+            sys.exit(1)
+
     print(f"Using KataGo model: {args.model_bin}")
+    if args.model_type in ["human_sl", "both"]:
+        print(f"Using human SL model: {args.human_sl_model_bin}")
     print(f"Using KataGo executable: {args.katago_exe}")
 
     # Determine board sizes
@@ -433,77 +543,123 @@ def main():
     else:
         mask_settings = [args.eliminate_identity_mask == "true"]
 
+    # Determine which models to analyze
+    models_to_analyze = []
+    if args.model_type in ["standard", "both"]:
+        models_to_analyze.append(("standard", args.model_bin, board_sizes))
+    if args.model_type in ["human_sl", "both"]:
+        models_to_analyze.append(("human_sl", args.human_sl_model_bin, [19]))  # 19x19 only
+
     # Convert models and collect statistics
     all_results = []
+    results_by_model_type = {}  # Track results separately by model type
 
     import coremltools as ct
     from coremltools.converters.katago import convert
 
-    for board_size in board_sizes:
-        for eliminate_identity_mask in mask_settings:
-            mask_str = "mask_true" if eliminate_identity_mask else "mask_false"
-            print(f"\nAnalyzing {board_size}x{board_size} board with eliminate_identity_mask={eliminate_identity_mask}...")
+    for model_type, model_bin, sizes in models_to_analyze:
+        model_results = []
 
-            model_path = str(repo_root / f"KataGo_{board_size}x{board_size}_{mask_str}.mlpackage")
+        if model_type == "standard":
+            # Standard model analysis (existing logic)
+            for board_size in sizes:
+                for eliminate_identity_mask in mask_settings:
+                    mask_str = "mask_true" if eliminate_identity_mask else "mask_false"
+                    print(f"\nAnalyzing {model_type} {board_size}x{board_size} with eliminate_identity_mask={eliminate_identity_mask}...")
 
-            if not Path(model_path).exists():
-                print(f"  Converting model to {model_path}...")
-                mlmodel = convert(
-                    args.model_bin,
-                    board_x_size=board_size,
-                    board_y_size=board_size,
-                    eliminate_identity_mask=eliminate_identity_mask,
-                    minimum_deployment_target=ct.target.iOS18,
-                    compute_precision=ct.precision.FLOAT16,
-                    compute_units=ct.ComputeUnit.CPU_AND_NE,
-                )
-                mlmodel.save(model_path)
-            else:
-                print(f"  Using existing model: {model_path}")
+                    model_path = str(repo_root / f"KataGo_{board_size}x{board_size}_{mask_str}.mlpackage")
 
-            test_inputs_dir = repo_root / "test_inputs" / f"{board_size}x{board_size}"
+                    if not Path(model_path).exists():
+                        print(f"  Converting model to {model_path}...")
+                        mlmodel = convert(
+                            model_bin,
+                            board_x_size=board_size,
+                            board_y_size=board_size,
+                            eliminate_identity_mask=eliminate_identity_mask,
+                            minimum_deployment_target=ct.target.iOS18,
+                            compute_precision=ct.precision.FLOAT16,
+                            compute_units=ct.ComputeUnit.CPU_AND_NE,
+                        )
+                        mlmodel.save(model_path)
+                    else:
+                        print(f"  Using existing model: {model_path}")
 
-            if not test_inputs_dir.exists():
-                print(f"  Skipping (test inputs not found: {test_inputs_dir})")
-                continue
+                    test_inputs_dir = repo_root / "test_inputs" / f"{board_size}x{board_size}"
 
-            results = collect_test_statistics(
-                board_size,
-                model_path,
-                args.model_bin,
+                    if not test_inputs_dir.exists():
+                        print(f"  Skipping (test inputs not found: {test_inputs_dir})")
+                        continue
+
+                    results = collect_test_statistics(
+                        board_size,
+                        model_path,
+                        model_bin,
+                        args.katago_exe,
+                        test_inputs_dir,
+                        eliminate_identity_mask,
+                    )
+
+                    model_results.extend(results)
+                    print(f"  Collected {len(results)} test results")
+
+        elif model_type == "human_sl":
+            # Human SL model analysis (new)
+            human_sl_results = analyze_human_sl_model(
+                model_bin,
                 args.katago_exe,
-                test_inputs_dir,
-                eliminate_identity_mask,
+                repo_root,
+                mask_settings,
             )
+            model_results.extend(human_sl_results)
 
-            all_results.extend(results)
-            print(f"  Collected {len(results)} test results")
+        results_by_model_type[model_type] = model_results
+        all_results.extend(model_results)
 
     if not all_results:
         print("\nError: No test results collected")
         sys.exit(1)
 
     # Aggregate and report
-    print(f"\nAggregating statistics from {len(all_results)} tests...")
-    stats = aggregate_statistics(all_results)
-
     # Get current tolerances
     current_tolerances = get_default_tolerances()
 
-    # Generate suggestions
-    suggested_tolerances = suggest_tolerances(stats, safety_margin=args.safety_margin)
+    if args.model_type == "both":
+        # Generate separate statistics for each model type
+        for model_type, results in results_by_model_type.items():
+            if not results:
+                continue
 
-    print_report(
-        stats,
-        suggested_tolerances,
-        current_tolerances,
-        args.summary_only,
-    )
+            print(f"\n{'='*80}")
+            print(f"Results for {model_type.upper()} models")
+            print(f"{'='*80}")
+
+            stats = aggregate_statistics(results)
+            suggested_tolerances = suggest_tolerances(stats, safety_margin=args.safety_margin)
+
+            print_report(
+                stats,
+                suggested_tolerances,
+                current_tolerances,
+                args.summary_only,
+            )
+    else:
+        # Original single-model-type reporting
+        print(f"\nAggregating statistics from {len(all_results)} tests...")
+        stats = aggregate_statistics(all_results)
+        suggested_tolerances = suggest_tolerances(stats, safety_margin=args.safety_margin)
+
+        print_report(
+            stats,
+            suggested_tolerances,
+            current_tolerances,
+            args.summary_only,
+        )
 
     # Save JSON if requested
     if args.output:
         output_data = {
             "num_tests": len(all_results),
+            "model_type": args.model_type,
             "board_sizes": list(set(r["board_size"] for r in all_results)),
             "eliminate_identity_mask_settings": list(set(r["eliminate_identity_mask"] for r in all_results)),
             "statistics": stats,
@@ -512,6 +668,13 @@ def main():
             "safety_margin": args.safety_margin,
             "raw_results": all_results,
         }
+
+        # Add per-model-type statistics if analyzing both
+        if args.model_type == "both":
+            output_data["statistics_by_model_type"] = {
+                model_type: aggregate_statistics(results)
+                for model_type, results in results_by_model_type.items()
+            }
 
         with open(args.output, "w") as f:
             json.dump(output_data, f, indent=2)
