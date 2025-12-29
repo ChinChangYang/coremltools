@@ -10,10 +10,12 @@ against the KataGo Eigen backend using relative tolerances for robust
 cross-platform validation.
 """
 
+import hashlib
 import json
 import subprocess
 import sys
 import tempfile
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -358,3 +360,162 @@ def is_eigen_backend_available(katago_exe: Optional[str] = None) -> bool:
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired, PermissionError):
         return False
+
+
+# ==============================================================================
+# Eigen Backend Output Caching
+# ==============================================================================
+
+
+@lru_cache(maxsize=1)
+def compute_model_hash(model_path: str) -> str:
+    """Compute SHA-256 hash of model file (cached per session).
+
+    Args:
+        model_path: Path to KataGo .bin.gz model file
+
+    Returns:
+        First 16 characters of SHA-256 hash
+    """
+    sha256 = hashlib.sha256()
+    with open(model_path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256.update(chunk)
+    return sha256.hexdigest()[:16]
+
+
+def compute_input_hash(inputs: dict) -> str:
+    """Compute hash of input arrays for cache validation.
+
+    Args:
+        inputs: Dictionary with spatial, global, mask inputs
+
+    Returns:
+        First 16 characters of SHA-256 hash of input data
+    """
+    sha256 = hashlib.sha256()
+    for key in sorted(inputs.keys()):
+        if key in ("spatial", "global", "mask"):
+            sha256.update(inputs[key].tobytes())
+    return sha256.hexdigest()[:16]
+
+
+def get_eigen_cache_path(
+    cache_dir: Path, model_hash: str, board_size: int, test_case: str
+) -> Path:
+    """Build cache file path for Eigen output.
+
+    Args:
+        cache_dir: Directory to store cache files
+        model_hash: Hash of the model file
+        board_size: Board size (e.g., 9, 13, 19)
+        test_case: Test case name (e.g., "zeros", "random_seed_42")
+
+    Returns:
+        Path to cache file
+    """
+    return cache_dir / f"{model_hash}_{board_size}x{board_size}_{test_case}.json"
+
+
+def load_cached_eigen_output(
+    cache_path: Path, expected_input_hash: str
+) -> Optional[dict]:
+    """Load cached Eigen output if valid.
+
+    Args:
+        cache_path: Path to cache file
+        expected_input_hash: Expected hash of input data for validation
+
+    Returns:
+        Dictionary of output arrays if cache is valid, None otherwise
+    """
+    if not cache_path.exists():
+        return None
+    try:
+        with open(cache_path) as f:
+            cache = json.load(f)
+        if cache.get("input_hash") != expected_input_hash:
+            return None  # Input changed, invalidate cache
+        return {
+            "policy": np.array(cache["outputs"]["policy"]),
+            "pass_policy": np.array(cache["outputs"]["pass_policy"]),
+            "value": np.array(cache["outputs"]["value"]),
+            "ownership": np.array(cache["outputs"]["ownership"]),
+            "score_value": np.array(cache["outputs"]["score_value"]),
+        }
+    except (json.JSONDecodeError, KeyError):
+        return None  # Corrupted cache
+
+
+def save_eigen_output_to_cache(
+    cache_path: Path,
+    model_hash: str,
+    board_size: int,
+    test_case: str,
+    input_hash: str,
+    outputs: dict,
+) -> None:
+    """Save Eigen output to cache.
+
+    Args:
+        cache_path: Path to cache file
+        model_hash: Hash of the model file
+        board_size: Board size (e.g., 9, 13, 19)
+        test_case: Test case name
+        input_hash: Hash of input data
+        outputs: Dictionary of output arrays from Eigen backend
+    """
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_data = {
+        "model_hash": model_hash,
+        "board_size": board_size,
+        "test_case": test_case,
+        "input_hash": input_hash,
+        "outputs": {key: val.tolist() for key, val in outputs.items()},
+    }
+    with open(cache_path, "w") as f:
+        json.dump(cache_data, f)
+
+
+def run_eigen_backend_cached(
+    model_path: str,
+    inputs: dict,
+    katago_exe: str,
+    cache_dir: Path,
+    test_case: str,
+    board_size: int,
+) -> Optional[dict]:
+    """Run Eigen backend with caching support.
+
+    This function first checks if a valid cached output exists for the given
+    model, inputs, and test case. If so, it returns the cached output.
+    Otherwise, it runs the Eigen backend and caches the result.
+
+    Args:
+        model_path: Path to KataGo .bin.gz model file
+        inputs: Dictionary with spatial, global, mask inputs
+        katago_exe: Path to the KataGo executable
+        cache_dir: Directory to store cache files
+        test_case: Test case name (e.g., "zeros", "random_seed_42")
+        board_size: Board size (e.g., 9, 13, 19)
+
+    Returns:
+        Dictionary of output arrays, or None if execution failed
+    """
+    model_hash = compute_model_hash(model_path)
+    input_hash = compute_input_hash(inputs)
+    cache_path = get_eigen_cache_path(cache_dir, model_hash, board_size, test_case)
+
+    # Try to load from cache
+    cached = load_cached_eigen_output(cache_path, input_hash)
+    if cached is not None:
+        return cached
+
+    # Cache miss - run Eigen backend
+    outputs = run_eigen_backend(model_path, inputs, katago_exe)
+    if outputs is not None:
+        save_eigen_output_to_cache(
+            cache_path, model_hash, board_size, test_case, input_hash, outputs
+        )
+
+    return outputs

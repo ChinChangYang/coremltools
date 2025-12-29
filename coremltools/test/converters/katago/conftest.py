@@ -161,3 +161,19 @@ def test_input_files(test_inputs_dir):
         pytest.fail(f"No test input files found in {test_inputs_dir}")
 
     return files
+
+
+@pytest.fixture(scope="session")
+def eigen_cache_dir():
+    """Get or create Eigen output cache directory.
+
+    Returns:
+        Path: Path to the Eigen output cache directory
+
+    Note:
+        Cache files are stored with the pattern:
+        {model_hash}_{board_size}x{board_size}_{test_case}.json
+    """
+    cache_dir = Path(__file__).parent.parent.parent.parent.parent / "test_inputs" / "eigen_cache"
+    cache_dir.mkdir(exist_ok=True)
+    return cache_dir

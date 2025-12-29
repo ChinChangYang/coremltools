@@ -17,7 +17,7 @@ from .validation_utils import (
     get_default_tolerances,
     load_test_input,
     run_coreml_model,
-    run_eigen_backend,
+    run_eigen_backend_cached,
 )
 
 
@@ -54,6 +54,7 @@ class TestKataGoCrossValidation:
         katago_model_bin,
         katago_executable,
         check_eigen_backend_available,
+        eigen_cache_dir,
         test_case,
     ):
         """Test Core ML model against Eigen backend for specific test case.
@@ -71,6 +72,7 @@ class TestKataGoCrossValidation:
             katago_model_bin: Path to KataGo binary model
             katago_executable: Path to KataGo executable
             check_eigen_backend_available: Fixture that skips if Eigen unavailable
+            eigen_cache_dir: Directory for caching Eigen backend outputs
             test_case: Test case name (e.g., "zeros", "random_seed_42")
         """
         # Load test input
@@ -83,8 +85,11 @@ class TestKataGoCrossValidation:
         # Run Core ML model
         coreml_out = run_coreml_model(converted_model, inputs)
 
-        # Run Eigen backend
-        eigen_out = run_eigen_backend(katago_model_bin, inputs, katago_executable)
+        # Run Eigen backend (with caching)
+        eigen_out = run_eigen_backend_cached(
+            katago_model_bin, inputs, katago_executable,
+            eigen_cache_dir, test_case, board_size
+        )
         if eigen_out is None:
             pytest.fail("Eigen backend execution failed")
 
@@ -117,6 +122,7 @@ class TestKataGoCrossValidation:
         katago_model_bin,
         katago_executable,
         check_eigen_backend_available,
+        eigen_cache_dir,
     ):
         """Test with partial board mask (board size dependent).
 
@@ -132,6 +138,7 @@ class TestKataGoCrossValidation:
             katago_model_bin: Path to KataGo binary model
             katago_executable: Path to KataGo executable
             check_eigen_backend_available: Fixture that skips if Eigen unavailable
+            eigen_cache_dir: Directory for caching Eigen backend outputs
         """
         # Determine partial mask test case name based on board size
         mask_size = board_size // 2
@@ -143,9 +150,12 @@ class TestKataGoCrossValidation:
 
         inputs = load_test_input(test_file)
 
-        # Run both backends
+        # Run both backends (with caching for Eigen)
         coreml_out = run_coreml_model(converted_model, inputs)
-        eigen_out = run_eigen_backend(katago_model_bin, inputs, katago_executable)
+        eigen_out = run_eigen_backend_cached(
+            katago_model_bin, inputs, katago_executable,
+            eigen_cache_dir, test_case, board_size
+        )
         if eigen_out is None:
             pytest.fail("Eigen backend execution failed")
 
