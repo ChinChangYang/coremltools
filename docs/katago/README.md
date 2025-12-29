@@ -242,7 +242,7 @@ cd ~/katago_workspace
 
 cat > convert_katago.py << 'EOF'
 #!/usr/bin/env python3
-import sys, coremltools as ct
+import coremltools as ct
 
 mlmodel = ct.converters.katago.convert(
     "kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz",
@@ -372,20 +372,6 @@ mlmodel.save("KataGo.mlpackage")
 
 **Performance**: ~7.1ms median, 1.4% faster than iOS15 baseline
 
-### Optimization Details
-
-Based on systematic experiments (see `docs/optimization_summary.md`):
-- **iOS18**: 1.4% speedup with full compatibility
-- **eliminate_identity_mask**: 6.5% speedup by eliminating mask operations
-- **FLOAT16**: Best balance of speed and accuracy for Neural Engine
-
-Tested and rejected alternatives:
-- Softplus/SiLU Mish variants (failed validation or slower)
-- Fused linear operations (minimal 0.7% gain, added complexity)
-- Custom pass pipelines (no measurable impact)
-
-For detailed experimental results, see [`docs/optimization_summary.md`](optimization_summary.md).
-
 ---
 
 ## Test the Converted Model
@@ -474,13 +460,10 @@ The validation tests compare Core ML outputs against KataGo's C++ Eigen backend.
 # Install Eigen3
 brew install eigen@3
 
-# Clone KataGo fork with validation subcommand (if not already available)
-cd ~/katago_workspace
-git clone https://github.com/ChinChangYang/KataGo.git
+# Get KataGo fork with validation subcommand (if not already available)
+git submodule init
+git submodule update
 cd KataGo
-
-# Switch to validation-subcommand branch
-git checkout validation-subcommand
 
 # Build with Eigen backend (macOS)
 cd cpp
@@ -513,6 +496,26 @@ ls test_inputs/19x19/
 python scripts/generate_test_inputs.py --board-x-size 19 --board-y-size 19 -o test_inputs/19x19
 ```
 
+**3. Link KataGo Models**
+
+```bash
+cd ~/katago_workspace/coremltools/KataGo
+ln -s ../../kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz .
+```
+
+**4. Download the Human SL Model**
+
+```bash
+cd ~/katago_workspace/coremltools/KataGo
+curl -O https://media.katagotraining.org/uploaded/networks/models_extra/b18c384nbt-humanv0.bin.gz
+```
+
+**Model details:**
+- **File size**: ~99MB (vs ~259MB for standard model)
+- **Board size**: 19x19 only (human SL networks are trained for 19x19)
+- **Metadata**: 192 channels encoding player ranks, time controls, dates, game sources
+- **Test inputs**: Located in `coremltools/test/converters/katago/test_inputs_19x19/`
+
 #### Running Pytest Tests
 
 ```bash
@@ -533,12 +536,16 @@ pytest coremltools/test/converters/katago/test_cross_validation.py -v -k "zeros"
 
 **Expected output:**
 ```
-=================================== 33 passed, 3 warnings in 116.18s (0:01:56) ====================================
+========================================== test session starts ==========================================
+platform darwin -- Python 3.11.14, pytest-9.0.2, pluggy-1.6.0
+...
+
+============================== 39 passed, 4 warnings in 101.61s (0:01:41) ===============================
 ```
 
 **Tolerances are defined in:** `coremltools/test/converters/katago/validation_utils.py`
 
-These tolerances account for expected differences between Core ML (ANE/GPU) and Eigen (CPU) implementations due to float16 precision, operation ordering, and hardware-specific optimizations.
+These tolerances account for expected differences between Core ML (ANE/GPU) and Eigen (CPU) implementations due to float16 precision and hardware-specific optimizations.
 
 ---
 
@@ -661,20 +668,6 @@ python scripts/analyze_tolerances.py --safety-margin 1.1
 
 The tolerance analysis script also supports KataGo human SL (supervised learning) models, which include a 192-channel metadata input for player ranks, time controls, and game information.
 
-#### Human SL Model Requirements
-
-**Download the human SL model:**
-```bash
-cd ~/katago_workspace
-curl -O https://media.katagotraining.org/uploaded/networks/models_extra/b18c384nbt-humanv0.bin.gz
-```
-
-**Model details:**
-- **File size**: ~99MB (vs 271MB for standard model)
-- **Board size**: 19x19 only (human SL networks are trained for 19x19)
-- **Metadata**: 192 channels encoding player ranks, time controls, dates, game sources
-- **Test inputs**: Located in `coremltools/test/converters/katago/test_inputs_19x19/`
-
 #### Running Human SL Analysis
 
 **Analyze human SL model only:**
@@ -740,9 +733,9 @@ Summary (across all test cases):
 
 Output          Tests    Max Diff     Cur Tol      Sug Tol      Status
 ---------------------------------------------------------------------------
-policy          9        9.05e-03     1.30e-02     1.36e-02     OK
-pass_policy     9        8.55e-03     1.10e-02     1.24e-02     OK
-value           9        6.31e-03     8.80e-03     8.90e-03     OK
+policy          17       5.56e-03     1.30e-02     8.22e-03     TIGHT
+pass_policy     17       2.72e-03     1.10e-02     3.89e-03     TIGHT
+value           17       4.32e-03     8.80e-03     6.15e-03     TIGHT
 
 ================================================================================
 Results for HUMAN_SL models
@@ -752,9 +745,9 @@ Summary (across all test cases):
 
 Output          Tests    Max Diff     Cur Tol      Sug Tol      Status
 ---------------------------------------------------------------------------
-policy          15       9.12e-03     1.30e-02     1.37e-02     OK
-pass_policy     15       8.61e-03     1.10e-02     1.26e-02     OK
-value           15       6.38e-03     8.80e-03     8.95e-03     OK
+policy          10       3.72e-03     1.30e-02     5.58e-03     TIGHT
+pass_policy     10       2.47e-03     1.10e-02     3.60e-03     TIGHT
+value           10       1.04e-03     8.80e-03     1.55e-03     TIGHT
 ```
 
 **Key findings:**
@@ -787,7 +780,7 @@ python scripts/analyze_tolerances.py \
 
 #### Understanding Human SL Test Cases
 
-The human SL test inputs (in `test_inputs_19x19/`) include:
+The human SL test inputs (located in `coremltools/test/converters/katago/test_inputs_19x19/`) include:
 
 **Test cases with metadata (5 cases):**
 - `zeros_with_metadata_rank_1d.json` - Empty board, 1 dan player profile
@@ -976,7 +969,7 @@ python scripts/benchmark_inference.py \
     "p95_ms": 6.84
   },
   "raw_timings_ms": [
-   6.7284590331837535,
+    6.7284590331837535,
     6.783333956263959,
     6.753167021088302,
     6.783540942706168,
