@@ -529,68 +529,16 @@ pytest coremltools/test/converters/katago/test_cross_validation.py -v -k "19"
 
 # Run specific test case across all board sizes
 pytest coremltools/test/converters/katago/test_cross_validation.py -v -k "zeros"
-
-# Run only fast tests (excludes cross-validation, which is marked as slow)
-pytest coremltools/test/converters/katago/ -v -m "not slow"
 ```
 
 **Expected output:**
 ```
-test_cross_validation.py::TestKataGoCrossValidation::test_cross_validation_against_eigen[19-zeros] PASSED
-test_cross_validation.py::TestKataGoCrossValidation::test_cross_validation_against_eigen[19-random_seed_42] PASSED
-test_cross_validation.py::TestKataGoCrossValidation::test_cross_validation_against_eigen[19-corner_stone] PASSED
-...
-test_cross_validation.py::TestKataGoCrossValidation::test_partial_mask[19] PASSED
-
-========================================== 9 passed in 12.3s ==========================================
+=================================== 33 passed, 3 warnings in 116.18s (0:01:56) ====================================
 ```
-
-**Understanding Test Failures:**
-
-When a test fails, pytest shows detailed error information:
-```
-FAILED test_cross_validation.py::TestKataGoCrossValidation::test_cross_validation_against_eigen[19-zeros]
-
-Cross-validation failed for zeros on 19x19:
-  - policy: FAIL - max_diff=8.21e-02, tolerance=7e-02
-  - value: PASS - max_diff=1.15e-04, tolerance=2e-01
-```
-
-This indicates which output exceeded tolerance and by how much.
-
-#### Understanding Results
-
-For each test case, the validation compares 5 outputs:
-
-1. **policy** - Move policy logits (tolerance: 7e-2)
-   - max_diff < 1e-3 is excellent
-   - Higher differences may occur in areas with many similar moves
-
-2. **pass_policy** - Pass move logit (tolerance: 1e-2)
-   - Single value comparison
-   - Very stable across implementations
-
-3. **value** - Game outcome predictions (tolerance: 2e-1)
-   - 3 values (win/loss/draw)
-   - Larger tolerance due to accumulated operations
-
-4. **ownership** - Territory predictions (tolerance: 5e-3)
-   - Per-intersection predictions
-   - Generally very stable
-
-5. **score_value** - Score distribution (tolerance: 5e-2)
-   - 6-bucket distribution
-   - Moderate tolerance for accumulated operations
-
-**Interpretation:**
-- **PASS** - Differences within tolerance (green)
-- **FAIL** - Differences exceed tolerance (red)
-- **MISSING** - Output not found (yellow)
-- **SHAPE_MISMATCH** - Output shapes don't match (yellow)
 
 **Tolerances are defined in:** `coremltools/test/converters/katago/validation_utils.py`
 
-These tolerances account for expected differences between Core ML (ANE/GPU) and Eigen (CPU) implementations due to float32 precision, operation ordering, and hardware-specific optimizations.
+These tolerances account for expected differences between Core ML (ANE/GPU) and Eigen (CPU) implementations due to float16 precision, operation ordering, and hardware-specific optimizations.
 
 ---
 
@@ -631,11 +579,11 @@ The script produces three sections:
 
 **1. Summary Table**
 ```
-Output          Tests    Max Abs      Max Rel      Cur Tol      Sug Tol      Status
------------------------------------------------------------------------------------------------
-policy          51       2.06e-01     9.05e-03     3.00e-01     3.09e-01     OK
-pass_policy     51       6.58e-02     8.55e-03     9.50e-02     9.57e-02     OK
-value           51       1.20e-01     6.31e-03     1.30e-01     1.39e-01     OK
+Output          Tests    Max Diff     Cur Tol      Sug Tol      Status
+---------------------------------------------------------------------------
+policy          51       9.05e-03     1.30e-02     1.36e-02     OK
+pass_policy     51       8.55e-03     1.10e-02     1.24e-02     OK
+value           51       6.31e-03     8.80e-03     8.90e-03     OK
 ```
 
 - **Tests**: Number of test cases analyzed
@@ -755,21 +703,21 @@ Configuration:
 
 Results:
 --------------------------------------------------
-  Median:       7.0 ms  ← PRIMARY METRIC
-  Mean:         7.0 ms
-  Std Dev:      0.0 ms
-  Min:          7.0 ms
-  Max:          7.1 ms
-  P95:          7.1 ms
+  Median:       6.7 ms  ← PRIMARY METRIC
+  Mean:         6.7 ms
+  Std Dev:      0.1 ms
+  Min:          6.6 ms
+  Max:          7.0 ms
+  P95:          6.8 ms
 
 Interpretation:
-  ✓ Low variability (0.6%) indicates consistent performance
-  ✓ P95 (7.1 ms) shows typical worst-case latency (+1.0%)
-  → Range: 0.1 ms (min-max spread)
+  ✓ Low variability (0.9%) indicates consistent performance
+  ✓ P95 (6.8 ms) shows typical worst-case latency (+1.4%)
+  → Range: 0.4 ms (min-max spread)
 
 Recommendation for optimization work:
   Compare MEDIAN values across runs. A change is meaningful if:
-  - Improvement > 5% (0.4 ms in this case)
+  - Improvement > 5% (0.3 ms in this case)
   - Reproducible across multiple benchmark runs
 ```
 
@@ -869,19 +817,19 @@ python scripts/benchmark_inference.py \
     "num_warmup": 10
   },
   "statistics": {
-    "median_ms": 7.08,
-    "mean_ms": 7.08,
-    "std_dev_ms": 0.019,
-    "min_ms": 7.01,
-    "max_ms": 7.15,
-    "p95_ms": 7.11
+    "median_ms": 6.73,
+    "mean_ms": 6.73,
+    "std_dev_ms": 0.058,
+    "min_ms": 6.60,
+    "max_ms": 6.88,
+    "p95_ms": 6.84
   },
   "raw_timings_ms": [
-    7.091459003277123,
-    7.084791024681181,
-    7.073083019349724,
-    7.07229197723791,
-    7.013791997451335,
+   6.7284590331837535,
+    6.783333956263959,
+    6.753167021088302,
+    6.783540942706168,
+    6.744708050973713,
     ...
   ]
 }
