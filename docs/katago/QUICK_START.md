@@ -2,6 +2,21 @@
 
 Minimal command sequence for converting KataGo models to Core ML. For detailed explanations, see [README.md](README.md).
 
+## TL;DR: One-Liner Summary
+
+```bash
+# Complete setup and conversion (run after prerequisites)
+mkdir -p ~/katago_workspace && cd ~/katago_workspace && \
+git clone https://github.com/ChinChangYang/coremltools.git && \
+cd coremltools && git checkout katagocoremltools && make wheel && \
+source scripts/env_activate.sh --python=3.11 && \
+pip install build/dist/coremltools*cp311*arm64.whl && \
+cd ~/katago_workspace && \
+curl -O https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz && \
+python -c "import coremltools as ct; ct.converters.katago.convert('kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz').save('KataGo.mlpackage')" && \
+echo "Done! Model saved to KataGo.mlpackage"
+```
+
 ## Prerequisites
 
 ```bash
@@ -117,18 +132,3 @@ python test_inference.py                                           # ✓ Test pa
 
 - See [README.md](README.md) for detailed documentation
 - See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common errors
-
-## One-Liner Summary
-
-```bash
-# Complete setup and conversion (run after prerequisites)
-mkdir -p ~/katago_workspace && cd ~/katago_workspace && \
-git clone https://github.com/ChinChangYang/coremltools.git && \
-cd coremltools && git checkout katagocoremltools && make wheel && \
-source scripts/env_activate.sh --python=3.11 && \
-pip install build/dist/coremltools*cp311*arm64.whl && \
-cd ~/katago_workspace && \
-curl -O https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz && \
-python -c "import coremltools as ct; ct.converters.katago.convert('kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz').save('KataGo.mlpackage')" && \
-echo "Done! Model saved to KataGo.mlpackage"
-```
