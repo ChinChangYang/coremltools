@@ -315,14 +315,37 @@ mlmodel = ct.converters.katago.convert(
     board_y_size=19,  # Height (default: 19)
     minimum_deployment_target=ct.target.iOS18,
     compute_precision=ct.precision.FLOAT16,
-    eliminate_identity_mask=True  # 6.5% speedup
+    optimize_identity_mask=True  # 6.5% speedup
 )
 mlmodel.save("KataGo.mlpackage")
 ```
 
 **Performance**: ~6.7ms median (M1/M2/M3 Mac), 6.5% faster than baseline
 
-**Important**: `eliminate_identity_mask=True` only works when the full board is used (no masked regions). For partial boards with masked regions, set to `False`.
+**Important**: `optimize_identity_mask=True` only works when the full board is used (no masked regions). For partial boards with masked regions, set to `False`.
+
+**Note**: The `input_mask` parameter is still required in your model's interface. This optimization only affects internal operations - it does not remove the mask input from your model.
+
+#### Understanding optimize_identity_mask
+
+The `optimize_identity_mask` parameter is an inference optimization for full board games. Here's what you need to know:
+
+**What it does:**
+- ✅ Eliminates internal mask multiplication operations in the model
+- ✅ Precomputes mask-derived constants at conversion time
+- ✅ Provides ~6.5% inference speedup
+
+**What it does NOT do:**
+- ❌ Does NOT remove the `input_mask` input from your model interface
+- ❌ Does NOT save memory (you still need to create and pass mask arrays)
+- ❌ Does NOT change your model's input/output signature
+
+**When to use it:**
+- ✅ **Use** `optimize_identity_mask=True` for full board inference (standard Go games)
+- ❌ **Do NOT use** for partial boards or masked regions (will produce incorrect results)
+
+**Performance tradeoff:**
+You get a 6.5% speedup, but your client code still needs to allocate and pass the mask array with all 1.0 values. The optimization happens inside the model, not in your application code.
 
 ### Converting for Different Board Sizes
 
@@ -338,7 +361,7 @@ mlmodel = ct.converters.katago.convert(
     board_y_size=9,
     minimum_deployment_target=ct.target.iOS18,
     compute_precision=ct.precision.FLOAT16,
-    eliminate_identity_mask=True
+    optimize_identity_mask=True
 )
 mlmodel.save("KataGo-9x9.mlpackage")
 
@@ -349,7 +372,7 @@ mlmodel = ct.converters.katago.convert(
     board_y_size=13,
     minimum_deployment_target=ct.target.iOS18,
     compute_precision=ct.precision.FLOAT16,
-    eliminate_identity_mask=True
+    optimize_identity_mask=True
 )
 mlmodel.save("KataGo-13x13.mlpackage")
 ```
@@ -365,7 +388,7 @@ mlmodel = ct.converters.katago.convert(
     "kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz",
     minimum_deployment_target=ct.target.iOS18,
     compute_precision=ct.precision.FLOAT16,
-    eliminate_identity_mask=False  # Required for partial masking
+    optimize_identity_mask=False  # Required for partial masking
 )
 mlmodel.save("KataGo.mlpackage")
 ```
@@ -686,7 +709,7 @@ Using KataGo model: KataGo/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
 Using human SL model: KataGo/b18c384nbt-humanv0.bin.gz
 Using KataGo executable: KataGo/cpp/build/katago
 
-Analyzing human SL 19x19 with eliminate_identity_mask=True...
+Analyzing human SL 19x19 with optimize_identity_mask=True...
   Converting model to KataGo_HumanSL_19x19_mask_true.mlpackage...
   Loading Core ML model: KataGo_HumanSL_19x19_mask_true.mlpackage
   Model loaded successfully
@@ -765,17 +788,17 @@ python scripts/analyze_tolerances.py \
   --output human_sl_analysis.json
 ```
 
-**Test with different eliminate_identity_mask settings:**
+**Test with different optimize_identity_mask settings:**
 ```bash
-# Test only with eliminate_identity_mask=False
+# Test only with optimize_identity_mask=False
 python scripts/analyze_tolerances.py \
   --model-type human_sl \
-  --eliminate-identity-mask false
+  --optimize-identity-mask false
 
 # Test both True and False (default)
 python scripts/analyze_tolerances.py \
   --model-type human_sl \
-  --eliminate-identity-mask both
+  --optimize-identity-mask both
 ```
 
 #### Understanding Human SL Test Cases

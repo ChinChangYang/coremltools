@@ -18,7 +18,7 @@ def convert(
     minimum_deployment_target=None,
     compute_precision=None,
     compute_units=None,
-    eliminate_identity_mask: bool = False,
+    optimize_identity_mask: bool = False,
 ):
     """
     Convert a KataGo model to Core ML format.
@@ -47,15 +47,25 @@ def convert(
     compute_units : coremltools.ComputeUnit, optional
         Compute units to use. Defaults to ALL.
 
-    eliminate_identity_mask : bool, optional
-        If True, eliminate mask operations for fixed board size.
+    optimize_identity_mask : bool, optional
+        If True, optimize inference by skipping internal mask operations.
 
-        This optimization provides ~6.5% inference speedup by precomputing
-        mask-derived constants and eliminating mask operations. However, it is
-        ONLY valid for full board inference where all mask values are 1.0.
+        **What this does:**
+        - ✅ Eliminates internal mask multiplication operations
+        - ✅ Precomputes mask-derived constants at conversion time
+        - ✅ Provides ~6.5% inference speedup
 
-        **Important**: Do NOT use with partial boards (masked regions).
-        The optimization will produce incorrect results if any mask values are 0.
+        **What this does NOT do:**
+        - ❌ Does NOT remove the ``input_mask`` parameter from model interface
+        - ❌ Does NOT save memory (you must still create and pass mask arrays)
+        - ❌ Does NOT change the model's input signature
+
+        **When to use:**
+        - ✅ Full board inference only (all mask values = 1.0)
+        - ❌ NOT compatible with partial boards (masked regions)
+
+        **Performance tradeoff:**
+        6.5% speedup, but client code still needs to allocate and pass mask arrays.
 
         Default is False (safe for all board configurations).
 
@@ -93,7 +103,7 @@ def convert(
     ...     "kata1-b40c256.bin.gz",
     ...     minimum_deployment_target=ct.target.iOS18,
     ...     compute_precision=ct.precision.FLOAT16,
-    ...     eliminate_identity_mask=True
+    ...     optimize_identity_mask=True
     ... )
     >>> mlmodel.save("KataGo-optimized.mlpackage")
 
@@ -134,7 +144,7 @@ def convert(
         model_desc,
         board_x_size=board_x_size,
         board_y_size=board_y_size,
-        eliminate_identity_mask=eliminate_identity_mask,
+        optimize_identity_mask=optimize_identity_mask,
     )
     prog = builder.build()
 

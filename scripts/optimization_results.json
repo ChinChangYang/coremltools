@@ -245,12 +245,12 @@
     },
     {
       "id": "mask_elimination",
-      "name": "Identity mask elimination (fixed 19x19 board)",
+      "name": "Identity mask optimization (fixed 19x19 board)",
       "config": {
         "mish_implementation": "original",
         "minimum_deployment_target": "iOS15",
         "compute_precision": "FLOAT16",
-        "eliminate_identity_mask": true
+        "optimize_identity_mask": true
       },
       "results": {
         "median_ms": 6.721,
@@ -262,7 +262,7 @@
       },
       "validation": "PASS - 8 of 9 test cases passed (partial_mask_9x9 fails as expected)",
       "accuracy_risk": "LOW - only for full 19x19 boards",
-      "notes": "6.5% faster than baseline (6.72ms vs 7.19ms) - BEST OVERALL PERFORMANCE. Eliminates mask operations by precomputing mask-derived constants (mask_sum=361, sqrt_s14_m01=0.5, sq_s01=0.15). Only valid for full board inference (all mask values = 1.0). Incompatible with partial boards."
+      "notes": "6.5% faster than baseline (6.72ms vs 7.19ms) - BEST OVERALL PERFORMANCE. Optimizes inference by skipping internal mask multiplication operations and precomputing mask-derived constants (mask_sum=361, sqrt_s14_m01=0.5, sq_s01=0.15). Only valid for full board inference (all mask values = 1.0). Incompatible with partial boards. Note: The input_mask parameter is still required in the model interface - this optimization only affects internal operations."
     }
   ],
   "summary": {
@@ -272,7 +272,7 @@
         "mish_implementation": "original",
         "minimum_deployment_target": "iOS15",
         "compute_precision": "FLOAT16",
-        "eliminate_identity_mask": true
+        "optimize_identity_mask": true
       },
       "median_ms": 6.721,
       "improvement_vs_baseline": "6.5%"
@@ -297,11 +297,12 @@
       "Fused linear provides 0.7% speedup while maintaining accuracy",
       "Combining iOS18 + fused linear is actually slower than iOS18 alone",
       "Phase 4 low-priority optimizations (skip irrelevant passes, aggressive const elimination, optimized fusion order) showed no meaningful performance impact (all within measurement noise)",
-      "Mask elimination (Experiment 10) provides the BEST performance improvement at 6.5% speedup (6.72ms vs 7.19ms baseline)",
-      "Mask elimination works by precomputing mask-derived constants and eliminating mask multiplications",
-      "Mask elimination is ONLY valid for full 19x19 board inference - incompatible with partial boards",
+      "Mask optimization (Experiment 10) provides the BEST performance improvement at 6.5% speedup (6.72ms vs 7.19ms baseline)",
+      "Mask optimization works by precomputing mask-derived constants and skipping internal mask multiplication operations",
+      "Mask optimization is ONLY valid for full 19x19 board inference - incompatible with partial boards",
+      "The input_mask parameter is still required in the model interface - the optimization only affects internal operations",
       "The baseline implementation is already well-optimized for Neural Engine, but mask operations are a significant overhead that can be eliminated for fixed board sizes"
     ],
-    "recommendation": "For full 19x19 board inference: Use mask elimination (eliminate_identity_mask=True) for 6.5% speedup. For variable board sizes or partial boards: Use iOS18 deployment target with original mish implementation for 1.4% speedup."
+    "recommendation": "For full 19x19 board inference: Use mask optimization (optimize_identity_mask=True) for 6.5% speedup. For variable board sizes or partial boards: Use iOS18 deployment target with original mish implementation for 1.4% speedup."
   }
 }

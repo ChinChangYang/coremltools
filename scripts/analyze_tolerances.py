@@ -40,7 +40,7 @@ from coremltools.test.converters.katago.validation_utils import (
 def is_full_board_mask(inputs: dict) -> bool:
     """Check if input mask represents a full board (all 1.0 values).
 
-    The eliminate_identity_mask optimization precomputes constants assuming
+    The optimize_identity_mask optimization precomputes constants assuming
     all mask values are 1.0. Test cases with partial masks (0.0 values) are
     incompatible with this optimization and should be skipped.
 
@@ -60,7 +60,7 @@ def collect_test_statistics(
     katago_bin: str,
     katago_exe: str,
     test_inputs_dir: Path,
-    eliminate_identity_mask: bool,
+    optimize_identity_mask: bool,
     require_metadata: bool = False,
 ) -> List[Dict]:
     """Run all tests for a board size and collect statistics.
@@ -71,7 +71,7 @@ def collect_test_statistics(
         katago_bin: Path to KataGo .bin.gz model
         katago_exe: Path to KataGo executable
         test_inputs_dir: Directory containing test input JSON files
-        eliminate_identity_mask: Value of eliminate_identity_mask used for this model
+        optimize_identity_mask: Value of optimize_identity_mask used for this model
         require_metadata: If True, skip test cases without metadata (for human SL models)
 
     Returns:
@@ -108,10 +108,10 @@ def collect_test_statistics(
             print(f"    Skipped (test case does not have metadata, required for human SL model)")
             continue
 
-        # Skip partial mask tests when eliminate_identity_mask=True
+        # Skip partial mask tests when optimize_identity_mask=True
         # (the optimization assumes full board with all mask values = 1.0)
-        if eliminate_identity_mask and not is_full_board_mask(inputs):
-            print(f"    Skipped (partial mask incompatible with eliminate_identity_mask)")
+        if optimize_identity_mask and not is_full_board_mask(inputs):
+            print(f"    Skipped (partial mask incompatible with optimize_identity_mask)")
             continue
 
         try:
@@ -128,7 +128,7 @@ def collect_test_statistics(
             results.append({
                 "test_case": test_file.stem,
                 "board_size": board_size,
-                "eliminate_identity_mask": eliminate_identity_mask,
+                "optimize_identity_mask": optimize_identity_mask,
                 "comparison": comparison,
             })
 
@@ -222,7 +222,7 @@ def analyze_human_sl_model(
         model_bin: Path to human SL .bin.gz model
         katago_exe: Path to KataGo executable
         repo_root: Repository root directory
-        mask_settings: List of eliminate_identity_mask settings to test
+        mask_settings: List of optimize_identity_mask settings to test
 
     Returns:
         List of test result dictionaries
@@ -233,9 +233,9 @@ def analyze_human_sl_model(
     all_results = []
     board_size = 19  # Human SL models are 19x19 only
 
-    for eliminate_identity_mask in mask_settings:
-        mask_str = "mask_true" if eliminate_identity_mask else "mask_false"
-        print(f"\nAnalyzing human SL 19x19 with eliminate_identity_mask={eliminate_identity_mask}...")
+    for optimize_identity_mask in mask_settings:
+        mask_str = "mask_true" if optimize_identity_mask else "mask_false"
+        print(f"\nAnalyzing human SL 19x19 with optimize_identity_mask={optimize_identity_mask}...")
 
         model_path = str(repo_root / f"KataGo_HumanSL_19x19_{mask_str}.mlpackage")
 
@@ -245,7 +245,7 @@ def analyze_human_sl_model(
                 model_bin,
                 board_x_size=19,
                 board_y_size=19,
-                eliminate_identity_mask=eliminate_identity_mask,
+                optimize_identity_mask=optimize_identity_mask,
                 minimum_deployment_target=ct.target.iOS18,
                 compute_precision=ct.precision.FLOAT16,
                 compute_units=ct.ComputeUnit.CPU_AND_NE,
@@ -269,7 +269,7 @@ def analyze_human_sl_model(
             model_bin,
             katago_exe,
             test_inputs_dir,
-            eliminate_identity_mask,
+            optimize_identity_mask,
             require_metadata=True,  # Human SL models require metadata
         )
 
@@ -445,11 +445,11 @@ def main():
         help="Safety margin multiplier for suggested tolerances (default: 1.5)"
     )
     parser.add_argument(
-        "--eliminate-identity-mask",
+        "--optimize-identity-mask",
         type=str,
         choices=["true", "false", "both"],
         default="both",
-        help="Test with eliminate_identity_mask=True, False, or both (default: both)"
+        help="Test with optimize_identity_mask=True, False, or both (default: both)"
     )
     parser.add_argument(
         "--model-type",
@@ -537,11 +537,11 @@ def main():
     else:
         board_sizes = [9, 13, 19]
 
-    # Determine eliminate_identity_mask settings to test
-    if args.eliminate_identity_mask == "both":
+    # Determine optimize_identity_mask settings to test
+    if args.optimize_identity_mask == "both":
         mask_settings = [True, False]
     else:
-        mask_settings = [args.eliminate_identity_mask == "true"]
+        mask_settings = [args.optimize_identity_mask == "true"]
 
     # Determine which models to analyze
     models_to_analyze = []
@@ -563,9 +563,9 @@ def main():
         if model_type == "standard":
             # Standard model analysis (existing logic)
             for board_size in sizes:
-                for eliminate_identity_mask in mask_settings:
-                    mask_str = "mask_true" if eliminate_identity_mask else "mask_false"
-                    print(f"\nAnalyzing {model_type} {board_size}x{board_size} with eliminate_identity_mask={eliminate_identity_mask}...")
+                for optimize_identity_mask in mask_settings:
+                    mask_str = "mask_true" if optimize_identity_mask else "mask_false"
+                    print(f"\nAnalyzing {model_type} {board_size}x{board_size} with optimize_identity_mask={optimize_identity_mask}...")
 
                     model_path = str(repo_root / f"KataGo_{board_size}x{board_size}_{mask_str}.mlpackage")
 
@@ -575,7 +575,7 @@ def main():
                             model_bin,
                             board_x_size=board_size,
                             board_y_size=board_size,
-                            eliminate_identity_mask=eliminate_identity_mask,
+                            optimize_identity_mask=optimize_identity_mask,
                             minimum_deployment_target=ct.target.iOS18,
                             compute_precision=ct.precision.FLOAT16,
                             compute_units=ct.ComputeUnit.CPU_AND_NE,
@@ -596,7 +596,7 @@ def main():
                         model_bin,
                         args.katago_exe,
                         test_inputs_dir,
-                        eliminate_identity_mask,
+                        optimize_identity_mask,
                     )
 
                     model_results.extend(results)
@@ -661,7 +661,7 @@ def main():
             "num_tests": len(all_results),
             "model_type": args.model_type,
             "board_sizes": list(set(r["board_size"] for r in all_results)),
-            "eliminate_identity_mask_settings": list(set(r["eliminate_identity_mask"] for r in all_results)),
+            "optimize_identity_mask_settings": list(set(r["optimize_identity_mask"] for r in all_results)),
             "statistics": stats,
             "current_tolerances": current_tolerances,
             "suggested_tolerances": suggested_tolerances,

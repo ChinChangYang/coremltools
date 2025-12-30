@@ -35,7 +35,7 @@ class KataGoOps:
         self,
         board_x_size: int = 19,
         board_y_size: int = 19,
-        eliminate_identity_mask: bool = False,
+        optimize_identity_mask: bool = False,
     ):
         """
         Initialize the KataGoOps builder.
@@ -43,18 +43,21 @@ class KataGoOps:
         Args:
             board_x_size: Board width (number of columns). Must be in range [2, 37].
             board_y_size: Board height (number of rows). Must be in range [2, 37].
-            eliminate_identity_mask: If True, eliminate mask operations for fixed board size.
+            optimize_identity_mask: If True, optimize inference by skipping internal mask operations.
                 When the mask covers the full board (all mask values are 1.0),
-                mask multiplications and mask_sum computations can be eliminated/precomputed.
+                internal mask multiplications and mask_sum computations can be eliminated/precomputed.
                 This optimization provides ~6.5% inference speedup but is only valid for
                 full board inference. Do not use with partial boards.
+
+                Important: The input_mask parameter is still required in the model interface.
+                This optimization only affects internal operations.
         """
         self.board_x_size = board_x_size
         self.board_y_size = board_y_size
-        self.eliminate_identity_mask = eliminate_identity_mask
+        self.optimize_identity_mask = optimize_identity_mask
 
         # Precompute mask-derived constants for full board
-        if self.eliminate_identity_mask:
+        if self.optimize_identity_mask:
             self.mask_sum_constant = float(self.board_x_size * self.board_y_size)
             self.mask_sum_reciprocal = 1.0 / self.mask_sum_constant  # Precomputed reciprocal
             sqrt_mask_sum = np.sqrt(self.mask_sum_constant)
@@ -111,8 +114,12 @@ class KataGoOps:
         x = mb.add(x=x, y=bias, name=f"{name}_bias")
 
         # Apply mask (zero out padded regions)
-        # When eliminate_identity_mask is True, skip mask multiplication (mask is all 1.0)
-        if not self.eliminate_identity_mask:
+        # Note: input_mask is ALWAYS required in model interface
+        # This optimization only affects internal operations:
+        # - Skips mask multiplications (assumes all mask values = 1.0)
+        # - Precomputes mask-derived constants
+        # - Does NOT remove input_mask from model signature
+        if not self.optimize_identity_mask:
             x = mb.mul(x=x, y=mask, name=f"{name}_mask")
 
         return x
@@ -229,8 +236,9 @@ class KataGoOps:
         Returns:
             Output tensor of shape [N, C*3] with concatenated pooling results.
         """
-        if self.eliminate_identity_mask:
+        if self.optimize_identity_mask:
             # Optimized path: all mask values are 1.0
+            # Precomputes constants and eliminates mask operations for faster inference
             # Mean pooling = average over all positions
             sum_x = mb.reduce_sum(x=x, axes=[2, 3], keep_dims=True, name=f"{name}_sum")
             mean_x = mb.mul(x=sum_x, y=np.float32(self.mask_sum_reciprocal), name=f"{name}_mean")
@@ -302,8 +310,9 @@ class KataGoOps:
         Returns:
             Output tensor of shape [N, C*3] with concatenated pooling results.
         """
-        if self.eliminate_identity_mask:
+        if self.optimize_identity_mask:
             # Optimized path: all mask values are 1.0
+            # Precomputes constants and eliminates mask operations for faster inference
             # Mean pooling = average over all positions
             sum_x = mb.reduce_sum(x=x, axes=[2, 3], keep_dims=True, name=f"{name}_sum")
             mean_x = mb.mul(x=sum_x, y=np.float32(self.mask_sum_reciprocal), name=f"{name}_mean")
