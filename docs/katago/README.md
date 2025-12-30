@@ -227,7 +227,7 @@ ls -lh kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
 
 The file should be approximately 259MB. If the download was interrupted or the file size is significantly different, delete it and download again.
 
-**Alternative models:** For other KataGo models, visit https://katagotraining.org/networks/ and look for `kata1-b*` files. The converter supports model versions 15 and 16 only.
+**Alternative models:** For other KataGo models, visit https://katagotraining.org/networks/ and look for `kata1-b*` files. The converter supports model versions 8, 15, and 16.
 
 ---
 

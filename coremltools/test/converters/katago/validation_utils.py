@@ -143,7 +143,8 @@ def run_coreml_model(
     # Map Core ML output names to standard names
     name_mapping = {
         "policy_p2_conv": "policy",
-        "policy_pass_mul2": "pass_policy",
+        "policy_pass_mul2": "pass_policy",  # v15+ (two-layer pass computation)
+        "policy_pass": "pass_policy",        # v8-14 (single-layer pass computation)
         "value_v3_bias": "value",
         "value_ownership_conv": "ownership",
         "value_sv3_bias": "score_value",
@@ -157,10 +158,12 @@ def run_coreml_model(
             arr = np.array(value)
             # Reshape outputs to match Eigen backend format
             if mapped_key == "policy":
-                # (1, 2, H, W) -> take channel 0 -> (H, W)
+                # v8: (1, 1, H, W), v15+: (1, 2, H, W) or (1, 4, H, W)
+                # Take channel 0 -> (H, W)
                 arr = arr[0, 0, :, :]
             elif mapped_key == "pass_policy":
-                # (1, 2) -> take element [0, 0] -> (1,)
+                # v8: (1, 1), v15+: (1, 2) or (1, 4)
+                # Take element [0, 0] -> (1,)
                 arr = np.array([arr[0, 0]])
             elif mapped_key == "value":
                 # (1, 3) -> (3,)
@@ -169,7 +172,7 @@ def run_coreml_model(
                 # (1, 1, H, W) -> (H, W)
                 arr = arr.squeeze()
             elif mapped_key == "score_value":
-                # (1, 6) -> (6,)
+                # v8: (1, 4), v9+: (1, 6) -> squeeze to (4,) or (6,)
                 arr = arr.squeeze()
             outputs[mapped_key] = arr
         else:
@@ -309,6 +312,14 @@ def compare_outputs(
                 "coreml_dtype": str(coreml_flat.dtype),
             }
             continue
+
+        # Special handling for score_value: Eigen backend outputs 6 channels for all models
+        # but v8 models only have 4 channels. Compare only overlapping channels.
+        if key == "score_value" and eigen_flat.shape != coreml_flat.shape:
+            # Take the minimum length for comparison
+            min_len = min(len(eigen_flat), len(coreml_flat))
+            eigen_flat = eigen_flat[:min_len]
+            coreml_flat = coreml_flat[:min_len]
 
         if eigen_flat.shape != coreml_flat.shape:
             results[key] = {

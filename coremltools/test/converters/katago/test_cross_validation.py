@@ -377,3 +377,79 @@ class TestKataGoCorMLOnly:
                 f"{key} shape mismatch for {board_size}x{board_size}: "
                 f"expected {expected_shape}, got {actual_shape}"
             )
+
+
+class TestKataGoV8CrossValidation:
+    """Cross-validation tests for KataGo v8 models.
+
+    Version 8 models have:
+    - 4 score value channels (vs 6 in v9+)
+    - 1 policy output channel (vs 2 in v12+)
+    - No post-processing parameters
+    - No SGF metadata encoder
+    - ReLU activation only
+    """
+
+    @pytest.mark.parametrize("test_case", ["zeros", "random_seed_42"])
+    def test_v8_cross_validation_against_eigen(
+        self,
+        v8_converted_model,
+        v8_test_inputs_dir,
+        v8_model_bin,
+        katago_executable,
+        check_eigen_backend_available,
+        eigen_cache_dir,
+        test_case,
+    ):
+        """Test v8 Core ML model against Eigen backend."""
+        test_file = v8_test_inputs_dir / f"{test_case}.json"
+        if not test_file.exists():
+            pytest.skip(f"Test case '{test_case}' not found")
+
+        inputs = load_test_input(test_file)
+        coreml_out = run_coreml_model(v8_converted_model, inputs)
+        eigen_out = run_eigen_backend_cached(
+            v8_model_bin, inputs, katago_executable,
+            eigen_cache_dir, test_case, 19
+        )
+        if eigen_out is None:
+            pytest.fail("Eigen backend execution failed")
+
+        tolerances = get_default_tolerances()
+        results = compare_outputs(eigen_out, coreml_out, tolerances)
+
+        failures = []
+        for key, result in results.items():
+            if result["status"] != "PASS":
+                failures.append(
+                    f"{key}: {result['status']} - "
+                    f"max_diff={result.get('max_diff', 'N/A')}, "
+                    f"tolerance={result.get('tolerance', 'N/A')}"
+                )
+
+        if failures:
+            pytest.fail(
+                f"V8 cross-validation failed for {test_case}:\n" +
+                "\n".join(f"  - {f}" for f in failures)
+            )
+
+    def test_v8_output_shapes(self, v8_converted_model, v8_test_inputs_dir):
+        """Test v8 model output shapes match expected dimensions."""
+        test_file = v8_test_inputs_dir / "zeros.json"
+        inputs = load_test_input(test_file)
+        outputs = run_coreml_model(v8_converted_model, inputs)
+
+        # V8-specific expected shapes (4 score channels, not 6)
+        expected_shapes = {
+            "policy": (19, 19),
+            "pass_policy": (1,),
+            "value": (3,),
+            "ownership": (19, 19),
+            "score_value": (4,),  # V8 has 4 channels
+        }
+
+        for key, expected_shape in expected_shapes.items():
+            actual_shape = outputs[key].shape
+            assert actual_shape == expected_shape, (
+                f"{key} shape mismatch: expected {expected_shape}, got {actual_shape}"
+            )

@@ -240,3 +240,81 @@ def human_sl_test_inputs_dir():
         )
 
     return test_dir
+
+
+# ==============================================================================
+# Version 8 Model Fixtures
+# ==============================================================================
+
+
+@pytest.fixture(scope="session")
+def v8_model_bin():
+    """Path to KataGo v8 test model.
+
+    Returns:
+        str: Path to the v8 model binary
+
+    Skips:
+        If the v8 test model is not found
+    """
+    model_path = Path(__file__).parent.parent.parent.parent.parent / "KataGo" / "cpp" / "tests" / "models" / "g170e-b10c128-s1141046784-d204142634.bin.gz"
+
+    if not model_path.exists():
+        pytest.skip(f"V8 test model not found: {model_path}")
+
+    return str(model_path)
+
+
+@pytest.fixture(scope="session")
+def v8_converted_model(tmp_path_factory, v8_model_bin):
+    """Convert v8 model to Core ML for 19x19 board.
+
+    Args:
+        tmp_path_factory: Pytest factory for creating temp directories
+        v8_model_bin: Path to v8 binary model (from fixture)
+
+    Returns:
+        str: Path to converted .mlpackage model
+    """
+    import coremltools as ct
+    from coremltools.converters.katago import convert
+
+    tmp_dir = tmp_path_factory.mktemp("models_v8")
+    model_path = tmp_dir / "KataGo_v8_19x19.mlpackage"
+
+    if model_path.exists():
+        return str(model_path)
+
+    mlmodel = convert(
+        v8_model_bin,
+        board_x_size=19,
+        board_y_size=19,
+        minimum_deployment_target=ct.target.iOS15,
+        compute_precision=ct.precision.FLOAT32,
+    )
+    mlmodel.save(str(model_path))
+
+    return str(model_path)
+
+
+@pytest.fixture(scope="session")
+def v8_test_inputs_dir():
+    """Get test inputs directory for v8 model.
+
+    Returns:
+        Path: Path to test inputs directory
+
+    Skips:
+        If the test inputs directory doesn't exist
+    """
+    test_dir = Path(__file__).parent / "test_inputs_v8_19x19"
+
+    if not test_dir.exists():
+        pytest.skip(
+            f"V8 test inputs not found. "
+            f"Run: python scripts/generate_test_inputs.py "
+            f"--output coremltools/test/converters/katago/test_inputs_v8_19x19 "
+            f"--model-path KataGo/cpp/tests/models/g170e-b10c128-s1141046784-d204142634.bin.gz"
+        )
+
+    return test_dir
