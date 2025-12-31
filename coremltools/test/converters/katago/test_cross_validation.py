@@ -368,7 +368,7 @@ class TestKataGoCorMLOnly:
             "pass_policy": (1,),
             "value": (3,),
             "ownership": (board_size, board_size),
-            "score_value": (6,),
+            "score_value": (4,),  # v8 model has 4 channels (v9+ has 6)
         }
 
         for key, expected_shape in expected_shapes.items():

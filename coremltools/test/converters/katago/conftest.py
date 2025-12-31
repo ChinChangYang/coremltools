@@ -21,7 +21,7 @@ def katago_model_bin():
         If the KataGo model binary is not found
     """
     # Look for model in katago_eigen directory
-    model_path = Path(__file__).parent.parent.parent.parent.parent / "KataGo" / "kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz"
+    model_path = Path(__file__).parent.parent.parent.parent.parent / "KataGo" / "cpp" / "tests" / "models" / "g170e-b10c128-s1141046784-d204142634.bin.gz"
 
     if not model_path.exists():
         pytest.skip(f"KataGo model not found: {model_path}")
@@ -172,7 +172,7 @@ def human_sl_model_bin():
     Skips:
         If the human SL model binary is not found
     """
-    model_path = Path(__file__).parent.parent.parent.parent.parent / "KataGo" / "b18c384nbt-humanv0.bin.gz"
+    model_path = Path(__file__).parent.parent.parent.parent.parent / "KataGo" / "models" / "b18c384nbt-humanv0.bin.gz"
 
     if not model_path.exists():
         pytest.skip(
