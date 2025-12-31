@@ -317,7 +317,7 @@ class KataGoModelBuilder:
             pass_hidden = self.ops.build_matmul(g1_pooled, policy_head.gpool_to_pass_mul, "policy_pass_mul1")
             pass_hidden = self.ops.build_matbias(pass_hidden, policy_head.gpool_to_pass_bias, "policy_pass_bias")
             pass_hidden = self.ops.build_activation(pass_hidden, policy_head.pass_activation, "policy_pass_act")
-            pass_logit = self.ops.build_matmul(pass_hidden, policy_head.gpool_to_pass_mul2, "policy_pass_mul2")
+            pass_logit = self.ops.build_matmul(pass_hidden, policy_head.gpool_to_pass_mul2, "policy_pass")
         else:
             # Version < 15: single layer pass computation
             pass_logit = self.ops.build_matmul(g1_pooled, policy_head.gpool_to_pass_mul, "policy_pass")

@@ -446,7 +446,7 @@ python test_inference.py
 ```
 Inference test PASSED!
   policy_p2_conv: (1, 2, 19, 19)
-  policy_pass_mul2: (1, 2)
+  policy_pass: (1, 2)
   value_v3_bias: (1, 3)
   value_ownership_conv: (1, 1, 19, 19)
   value_sv3_bias: (1, 6)
@@ -454,7 +454,7 @@ Inference test PASSED!
 
 **Output explanation:**
 - **policy_p2_conv**: Move policy logits for each board position (2 channels)
-- **policy_pass_mul2**: Pass move policy logit
+- **policy_pass**: Pass move policy logit
 - **value_v3_bias**: Game outcome predictions (win/loss/draw)
 - **value_ownership_conv**: Territory ownership predictions
 - **value_sv3_bias**: Score distribution predictions
