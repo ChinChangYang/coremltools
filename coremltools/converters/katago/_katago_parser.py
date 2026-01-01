@@ -6,7 +6,7 @@
 """
 Parser for KataGo model binary files.
 
-Supports KataGo model versions 8, 15, and 16 in binary format (.bin, .bin.gz).
+Supports KataGo model versions 8-16 in binary format (.bin, .bin.gz).
 """
 
 import gzip
@@ -42,10 +42,10 @@ class KataGoModelParser:
     """
     Parser for KataGo neural network model files.
 
-    Supports versions 8, 15, and 16 models in binary format (.bin, .bin.gz).
+    Supports versions 8-16 models in binary format (.bin, .bin.gz).
     """
 
-    SUPPORTED_VERSIONS = (8, 15, 16)
+    SUPPORTED_VERSIONS = (8, 9, 10, 11, 12, 13, 14, 15, 16)
 
     def __init__(self, model_path: str):
         """
