@@ -1,0 +1,11 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: katagocoreml
+Description: KataGo to Core ML Converter Library
+Version: @PROJECT_VERSION@
+Requires: protobuf >= 3.0, absl_base, absl_log, absl_strings, absl_status, absl_statusor, absl_hash
+Libs: -L${libdir} -lkatagocoreml -lz
+Cflags: -I${includedir} -std=c++17

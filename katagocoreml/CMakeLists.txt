@@ -160,17 +160,16 @@ endif()
 if(KATAGOCOREML_BUILD_TESTS)
     enable_testing()
 
-    # Find or fetch Google Test
-    find_package(GTest QUIET)
-    if(NOT GTest_FOUND)
-        include(FetchContent)
-        FetchContent_Declare(
-            googletest
-            GIT_REPOSITORY https://github.com/google/googletest.git
-            GIT_TAG release-1.12.1
-        )
-        FetchContent_MakeAvailable(googletest)
-    endif()
+    # Use FetchContent to ensure consistent build configuration
+    # (avoid ASAN symbol mismatch with system-installed GTest)
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG release-1.12.1
+    )
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
 
     add_executable(katagocoreml_tests
         tests/ParserTests.cpp
@@ -209,3 +208,17 @@ if(KATAGOCOREML_BUILD_TOOLS)
         RUNTIME DESTINATION bin
     )
 endif()
+
+# ============================================================================
+# pkg-config Support
+# ============================================================================
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/katagocoreml.pc.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/katagocoreml.pc"
+    @ONLY
+)
+
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/katagocoreml.pc"
+    DESTINATION lib/pkgconfig
+)

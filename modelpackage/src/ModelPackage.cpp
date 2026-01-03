@@ -202,7 +202,7 @@ ModelPackageImpl::ModelPackageImpl(const std::filesystem::path& path, bool creat
             m_manifest = std::make_unique<JsonMap>(manifestStream);
             manifestStream.close();
         } else {
-            throw std::runtime_error("A valid manifest does not exist at path: " + m_manifestPath.string());
+            throw std::runtime_error("A valid manifest does not exist at path: " + m_manifestPath.string() + ". Remove the .mlpackage file and try again.");
         }
     }
     // Create the package structure at specified path
@@ -426,7 +426,7 @@ std::string ModelPackageImpl::addItem(const std::filesystem::path& path, const s
 std::string ModelPackageImpl::setRootModel(const std::filesystem::path& path, const std::string& name, const std::string& author, const std::string& description)
 {
     if (m_manifest->hasKey(kModelPackageRootModelKey)) {
-        throw std::runtime_error("A root model already exists in this package");
+        throw std::runtime_error("A Core ML model already exists in this package");
     }
     
     auto identifier = addItem(path, name, author, description);
