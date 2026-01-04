@@ -38,7 +38,8 @@ private:
 
     /// Write weight blob file
     void writeWeightBlob(const std::string& weights_dir,
-                         std::vector<WeightEntry>& weights);
+                         std::vector<WeightEntry>& weights,
+                         bool use_fp16);
 
     /// Create .mlpackage directory structure
     void createPackage(const std::string& output_path,

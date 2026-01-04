@@ -19,7 +19,8 @@ public:
     MILBuilder(const KataGoModelDesc& model,
                int board_x_size,
                int board_y_size,
-               bool optimize_identity_mask);
+               bool optimize_identity_mask,
+               bool use_fp16 = false);
 
     /// Build and return the MIL program protobuf
     /// @return Unique pointer to MIL Program protobuf
@@ -37,6 +38,8 @@ private:
     int m_board_x_size;
     int m_board_y_size;
     bool m_optimize_identity_mask;
+    bool m_use_fp16;
+    CoreML::Specification::MILSpec::DataType m_weight_dtype;
     KataGoOps m_ops;
 
     // Operation name counter for unique names
@@ -64,6 +67,12 @@ private:
     void addIntScalarConstOp(CoreML::Specification::MILSpec::Block* block,
                              const std::string& name,
                              int32_t value);
+
+    void addCastOp(CoreML::Specification::MILSpec::Block* block,
+                   const std::string& input,
+                   const std::string& output,
+                   const std::string& dtype,
+                   const std::vector<int64_t>& shape);
 
     void addConvOp(CoreML::Specification::MILSpec::Block* block,
                    const std::string& input,

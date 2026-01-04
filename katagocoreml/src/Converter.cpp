@@ -24,11 +24,15 @@ void KataGoConverter::convert(const std::string& input_path,
     KataGoParser parser(input_path);
     KataGoModelDesc model = parser.parse();
 
+    // Determine if using FP16 precision
+    bool use_fp16 = (options.compute_precision == "FLOAT16");
+
     // Build MIL program
     MILBuilder builder(model,
                        options.board_x_size,
                        options.board_y_size,
-                       options.optimize_identity_mask);
+                       options.optimize_identity_mask,
+                       use_fp16);
     auto program = builder.build();
 
     // Get weights from builder

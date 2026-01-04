@@ -15,9 +15,11 @@ public:
     /// Write weights to blob file
     /// @param weights Vector of weight entries to serialize
     /// @param blob_path Path to output blob file
+    /// @param use_fp16 If true, convert weights to FLOAT16
     /// @return Total bytes written
     static size_t serialize(std::vector<WeightEntry>& weights,
-                            const std::string& blob_path);
+                            const std::string& blob_path,
+                            bool use_fp16 = false);
 };
 
 }  // namespace katagocoreml

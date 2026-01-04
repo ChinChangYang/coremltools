@@ -26,8 +26,11 @@ void CoreMLSerializer::serialize(CoreML::Specification::MILSpec::Program* progra
     std::filesystem::create_directories(temp_dir);
     std::string weights_dir = temp_dir.string();
 
+    // Determine if using FP16 precision
+    bool use_fp16 = (options.compute_precision == "FLOAT16");
+
     // Write weight blob (this sets blob_offset on each WeightEntry)
-    writeWeightBlob(weights_dir, weights);
+    writeWeightBlob(weights_dir, weights, use_fp16);
 
     // Update MIL program with calculated blob offsets
     updateBlobOffsets(program, weights);
@@ -125,10 +128,11 @@ std::unique_ptr<CoreML::Specification::Model> CoreMLSerializer::createModelSpec(
 }
 
 void CoreMLSerializer::writeWeightBlob(const std::string& weights_dir,
-                                       std::vector<WeightEntry>& weights) {
+                                       std::vector<WeightEntry>& weights,
+                                       bool use_fp16) {
     std::filesystem::create_directories(weights_dir);
     std::string blob_path = weights_dir + "/weight.bin";
-    WeightSerializer::serialize(weights, blob_path);
+    WeightSerializer::serialize(weights, blob_path, use_fp16);
 }
 
 void CoreMLSerializer::createPackage(const std::string& output_path,
