@@ -35,9 +35,13 @@ void KataGoConverter::convert(const std::string& input_path,
     auto weights = builder.getWeights();
     std::vector<WeightEntry> weights_copy(weights.begin(), weights.end());
 
+    // Update options with model version for serialization
+    ConversionOptions final_options = options;
+    final_options.model_version = model.model_version;
+
     // Serialize to .mlpackage
-    CoreMLSerializer serializer(options.specification_version);
-    serializer.serialize(program.get(), weights_copy, output_path, options);
+    CoreMLSerializer serializer(final_options.specification_version);
+    serializer.serialize(program.get(), weights_copy, output_path, final_options);
 }
 
 ModelInfo KataGoConverter::getModelInfo(const std::string& input_path) {

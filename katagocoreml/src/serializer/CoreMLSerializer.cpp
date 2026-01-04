@@ -10,6 +10,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <filesystem>
+#include <unordered_map>
 
 namespace katagocoreml {
 
@@ -25,8 +26,11 @@ void CoreMLSerializer::serialize(CoreML::Specification::MILSpec::Program* progra
     std::filesystem::create_directories(temp_dir);
     std::string weights_dir = temp_dir.string();
 
-    // Write weight blob
+    // Write weight blob (this sets blob_offset on each WeightEntry)
     writeWeightBlob(weights_dir, weights);
+
+    // Update MIL program with calculated blob offsets
+    updateBlobOffsets(program, weights);
 
     // Create Model spec wrapping the MIL program
     auto model = createModelSpec(program, options);
@@ -78,29 +82,30 @@ std::unique_ptr<CoreML::Specification::Model> CoreMLSerializer::createModelSpec(
     mask_type->add_shape(options.board_y_size);
     mask_type->add_shape(options.board_x_size);
 
-    // Add output descriptions
+    // Add output descriptions (names match Python coremltools converter)
     auto* policy_output = desc->add_output();
-    policy_output->set_name("policy_output");
+    policy_output->set_name("policy_p2_conv");
     auto* policy_type = policy_output->mutable_type()->mutable_multiarraytype();
     policy_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
 
     auto* pass_output = desc->add_output();
-    pass_output->set_name("pass_output");
+    // Pass output name depends on model version: v15+ uses "policy_pass_mul2", pre-v15 uses "policy_pass"
+    pass_output->set_name(options.model_version >= 15 ? "policy_pass_mul2" : "policy_pass");
     auto* pass_type = pass_output->mutable_type()->mutable_multiarraytype();
     pass_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
 
     auto* value_output = desc->add_output();
-    value_output->set_name("value_output");
+    value_output->set_name("value_v3_bias");
     auto* value_type = value_output->mutable_type()->mutable_multiarraytype();
     value_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
 
     auto* ownership_output = desc->add_output();
-    ownership_output->set_name("ownership_output");
+    ownership_output->set_name("value_ownership_conv");
     auto* ownership_type = ownership_output->mutable_type()->mutable_multiarraytype();
     ownership_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
 
     auto* score_output = desc->add_output();
-    score_output->set_name("score_value_output");
+    score_output->set_name("value_sv3_bias");
     auto* score_type = score_output->mutable_type()->mutable_multiarraytype();
     score_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
 
@@ -152,6 +157,47 @@ void CoreMLSerializer::createPackage(const std::string& output_path,
 
     // Cleanup temp file
     std::filesystem::remove(temp_spec);
+}
+
+void CoreMLSerializer::updateBlobOffsets(CoreML::Specification::MILSpec::Program* program,
+                                          const std::vector<WeightEntry>& weights) {
+    // Build a map from weight name to blob offset
+    std::unordered_map<std::string, uint64_t> offset_map;
+    for (const auto& entry : weights) {
+        offset_map[entry.name] = entry.blob_offset;
+    }
+
+    // Navigate through MIL program structure to find all blobfilevalue entries
+    // Structure: Program -> functions -> blocks -> operations -> attributes["val"]
+    for (auto& func_pair : *program->mutable_functions()) {
+        auto& func = func_pair.second;
+        for (auto& block_pair : *func.mutable_block_specializations()) {
+            auto& block = block_pair.second;
+            for (int op_idx = 0; op_idx < block.operations_size(); ++op_idx) {
+                auto* op = block.mutable_operations(op_idx);
+                // Check if this is a const operation
+                if (op->type() == "const") {
+                    // Get the "val" attribute
+                    auto* attrs = op->mutable_attributes();
+                    auto val_it = attrs->find("val");
+                    if (val_it != attrs->end()) {
+                        auto& val = val_it->second;
+                        // Check if it's a blobfilevalue
+                        if (val.has_blobfilevalue()) {
+                            // Get the output name to look up the offset
+                            if (op->outputs_size() > 0) {
+                                const std::string& output_name = op->outputs(0).name();
+                                auto offset_it = offset_map.find(output_name);
+                                if (offset_it != offset_map.end()) {
+                                    val.mutable_blobfilevalue()->set_offset(offset_it->second);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 }  // namespace katagocoreml

@@ -49,6 +49,22 @@ private:
                     const std::vector<float>& data,
                     const std::vector<int64_t>& shape);
 
+    void addIntArrayConstOp(CoreML::Specification::MILSpec::Block* block,
+                            const std::string& name,
+                            const std::vector<int32_t>& values);
+
+    void addBoolScalarConstOp(CoreML::Specification::MILSpec::Block* block,
+                              const std::string& name,
+                              bool value);
+
+    void addFloatScalarConstOp(CoreML::Specification::MILSpec::Block* block,
+                               const std::string& name,
+                               float value);
+
+    void addIntScalarConstOp(CoreML::Specification::MILSpec::Block* block,
+                             const std::string& name,
+                             int32_t value);
+
     void addConvOp(CoreML::Specification::MILSpec::Block* block,
                    const std::string& input,
                    const ConvLayerDesc& layer,
@@ -68,11 +84,13 @@ private:
     void addGlobalPoolingOps(CoreML::Specification::MILSpec::Block* block,
                              const std::string& input,
                              const std::string& mask,
+                             int channels,
                              const std::string& output);
 
     void addGlobalPoolingValueOps(CoreML::Specification::MILSpec::Block* block,
                                   const std::string& input,
                                   const std::string& mask,
+                                  int channels,
                                   const std::string& output);
 
     void addMatMulOp(CoreML::Specification::MILSpec::Block* block,
@@ -84,6 +102,12 @@ private:
                       const std::string& input,
                       const MatBiasLayerDesc& layer,
                       const std::string& output);
+
+    void addLinearOp(CoreML::Specification::MILSpec::Block* block,
+                     const std::string& input,
+                     const MatMulLayerDesc& matmul,
+                     const MatBiasLayerDesc& bias,
+                     const std::string& output);
 
     // Network component builders
     std::string buildTrunk(CoreML::Specification::MILSpec::Block* block,

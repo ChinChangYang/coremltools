@@ -44,6 +44,10 @@ private:
     void createPackage(const std::string& output_path,
                        CoreML::Specification::Model* model,
                        const std::string& weights_dir);
+
+    /// Update blob offsets in MIL program after weights are serialized
+    void updateBlobOffsets(CoreML::Specification::MILSpec::Program* program,
+                          const std::vector<WeightEntry>& weights);
 };
 
 }  // namespace katagocoreml

@@ -24,6 +24,9 @@ struct ConversionOptions {
 
     /// Core ML specification version (default: 6 for iOS 15+)
     int specification_version = 6;
+
+    /// KataGo model version (set internally during conversion)
+    int model_version = 0;
 };
 
 /// Information about a KataGo model (without full conversion)

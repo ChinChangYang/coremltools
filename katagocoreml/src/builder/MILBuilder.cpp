@@ -130,6 +130,24 @@ void MILBuilder::addConstOp(CoreML::Specification::MILSpec::Block* block,
     auto* op = block->add_operations();
     op->set_type("const");
 
+    // "name" attribute (matching Python structure)
+    auto& name_attr = (*op->mutable_attributes())["name"];
+    name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+        CoreML::Specification::MILSpec::DataType::STRING);
+    name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(name);
+
+    // "val" attribute with type and blob reference
+    auto& val_attr = (*op->mutable_attributes())["val"];
+    auto* val_type = val_attr.mutable_type()->mutable_tensortype();
+    val_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    val_type->set_rank(static_cast<int64_t>(shape.size()));
+    for (int64_t dim : shape) {
+        val_type->add_dimensions()->mutable_constant()->set_size(dim);
+    }
+    auto* blob_val = val_attr.mutable_blobfilevalue();
+    blob_val->set_filename("@model_path/weights/weight.bin");
+    // Offset will be set during serialization
+
     // Set output
     auto* output = op->add_outputs();
     output->set_name(name);
@@ -137,16 +155,125 @@ void MILBuilder::addConstOp(CoreML::Specification::MILSpec::Block* block,
     output_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
     output_type->set_rank(static_cast<int64_t>(shape.size()));
     for (int64_t dim : shape) {
-        auto* d = output_type->add_dimensions();
-        d->mutable_constant()->set_size(dim);
+        output_type->add_dimensions()->mutable_constant()->set_size(dim);
+    }
+}
+
+// Helper: Add INT32 array const op (for axes, shape)
+void MILBuilder::addIntArrayConstOp(CoreML::Specification::MILSpec::Block* block,
+                                     const std::string& name,
+                                     const std::vector<int32_t>& values) {
+    auto* op = block->add_operations();
+    op->set_type("const");
+
+    // "name" attribute
+    auto& name_attr = (*op->mutable_attributes())["name"];
+    name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+        CoreML::Specification::MILSpec::DataType::STRING);
+    name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(name);
+
+    // "val" attribute with INT32 type
+    auto& val_attr = (*op->mutable_attributes())["val"];
+    auto* val_type = val_attr.mutable_type()->mutable_tensortype();
+    val_type->set_datatype(CoreML::Specification::MILSpec::DataType::INT32);
+    val_type->set_rank(1);
+    val_type->add_dimensions()->mutable_constant()->set_size(static_cast<int64_t>(values.size()));
+    auto* ints = val_attr.mutable_immediatevalue()->mutable_tensor()->mutable_ints();
+    for (int32_t v : values) {
+        ints->add_values(v);
     }
 
-    // Set val attribute with blob reference
-    auto& attrs = *op->mutable_attributes();
-    auto& val_attr = attrs["val"];
-    auto* blob_val = val_attr.mutable_blobfilevalue();
-    blob_val->set_filename("@model_path/weights/weight.bin");
-    // Offset will be set during serialization
+    // Output
+    auto* output = op->add_outputs();
+    output->set_name(name);
+    auto* out_type = output->mutable_type()->mutable_tensortype();
+    out_type->set_datatype(CoreML::Specification::MILSpec::DataType::INT32);
+    out_type->set_rank(1);
+    out_type->add_dimensions()->mutable_constant()->set_size(static_cast<int64_t>(values.size()));
+}
+
+// Helper: Add BOOL scalar const op (for keep_dims)
+void MILBuilder::addBoolScalarConstOp(CoreML::Specification::MILSpec::Block* block,
+                                       const std::string& name,
+                                       bool value) {
+    auto* op = block->add_operations();
+    op->set_type("const");
+
+    // "name" attribute
+    auto& name_attr = (*op->mutable_attributes())["name"];
+    name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+        CoreML::Specification::MILSpec::DataType::STRING);
+    name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(name);
+
+    // "val" attribute with BOOL type (rank 0 = scalar)
+    auto& val_attr = (*op->mutable_attributes())["val"];
+    auto* val_type = val_attr.mutable_type()->mutable_tensortype();
+    val_type->set_datatype(CoreML::Specification::MILSpec::DataType::BOOL);
+    val_type->set_rank(0);
+    val_attr.mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(value);
+
+    // Output
+    auto* output = op->add_outputs();
+    output->set_name(name);
+    auto* out_type = output->mutable_type()->mutable_tensortype();
+    out_type->set_datatype(CoreML::Specification::MILSpec::DataType::BOOL);
+    out_type->set_rank(0);
+}
+
+// Helper: Add FLOAT32 scalar const op (for y values in sub/mul)
+void MILBuilder::addFloatScalarConstOp(CoreML::Specification::MILSpec::Block* block,
+                                        const std::string& name,
+                                        float value) {
+    auto* op = block->add_operations();
+    op->set_type("const");
+
+    // "name" attribute
+    auto& name_attr = (*op->mutable_attributes())["name"];
+    name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+        CoreML::Specification::MILSpec::DataType::STRING);
+    name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(name);
+
+    // "val" attribute with FLOAT32 type (rank 0 = scalar)
+    auto& val_attr = (*op->mutable_attributes())["val"];
+    auto* val_type = val_attr.mutable_type()->mutable_tensortype();
+    val_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    val_type->set_rank(0);
+    val_attr.mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(value);
+
+    // Output
+    auto* output = op->add_outputs();
+    output->set_name(name);
+    auto* out_type = output->mutable_type()->mutable_tensortype();
+    out_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    out_type->set_rank(0);
+}
+
+// Helper: Add INT32 scalar const op (for concat axis)
+void MILBuilder::addIntScalarConstOp(CoreML::Specification::MILSpec::Block* block,
+                                      const std::string& name,
+                                      int32_t value) {
+    auto* op = block->add_operations();
+    op->set_type("const");
+
+    // "name" attribute
+    auto& name_attr = (*op->mutable_attributes())["name"];
+    name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+        CoreML::Specification::MILSpec::DataType::STRING);
+    name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(name);
+
+    // "val" attribute with INT32 type (rank 0 = scalar)
+    auto& val_attr = (*op->mutable_attributes())["val"];
+    auto* val_type = val_attr.mutable_type()->mutable_tensortype();
+    val_type->set_datatype(CoreML::Specification::MILSpec::DataType::INT32);
+    val_type->set_rank(0);
+    val_attr.mutable_immediatevalue()->mutable_tensor()->mutable_ints()->add_values(value);
+
+    // Output
+    auto* output = op->add_outputs();
+    output->set_name(name);
+    auto* out_type = output->mutable_type()->mutable_tensortype();
+    out_type->set_datatype(CoreML::Specification::MILSpec::DataType::INT32);
+    out_type->set_rank(0);
 }
 
 void MILBuilder::addConvOp(CoreML::Specification::MILSpec::Block* block,
@@ -164,62 +291,129 @@ void MILBuilder::addConvOp(CoreML::Specification::MILSpec::Block* block,
     // Add weight constant
     addConstOp(block, weight_name, layer.weights, layer.getWeightShape());
 
-    // Add pad_type constant ("same")
+    // Add pad_type constant ("same") - STRING type
     {
         auto* const_op = block->add_operations();
         const_op->set_type("const");
+        // "name" attribute
+        auto& name_attr = (*const_op->mutable_attributes())["name"];
+        name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::STRING);
+        name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(pad_type_name);
+        // "val" attribute with type
         auto& val = (*const_op->mutable_attributes())["val"];
+        val.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::STRING);
         val.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values("same");
+        // Output
         auto* out = const_op->add_outputs();
         out->set_name(pad_type_name);
+        out->mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::STRING);
     }
 
-    // Add dilations constant
+    // Add dilations constant - INT32 type, shape [2]
     {
         auto* const_op = block->add_operations();
         const_op->set_type("const");
+        // "name" attribute
+        auto& name_attr = (*const_op->mutable_attributes())["name"];
+        name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::STRING);
+        name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(dilations_name);
+        // "val" attribute with type
         auto& val = (*const_op->mutable_attributes())["val"];
+        auto* val_type = val.mutable_type()->mutable_tensortype();
+        val_type->set_datatype(CoreML::Specification::MILSpec::DataType::INT32);
+        val_type->set_rank(1);
+        val_type->add_dimensions()->mutable_constant()->set_size(2);
         auto* int_vals = val.mutable_immediatevalue()->mutable_tensor()->mutable_ints();
         int_vals->add_values(layer.dilation_y);
         int_vals->add_values(layer.dilation_x);
+        // Output
         auto* out = const_op->add_outputs();
         out->set_name(dilations_name);
+        auto* tt = out->mutable_type()->mutable_tensortype();
+        tt->set_datatype(CoreML::Specification::MILSpec::DataType::INT32);
+        tt->set_rank(1);
+        tt->add_dimensions()->mutable_constant()->set_size(2);
     }
 
-    // Add strides constant
+    // Add strides constant - INT32 type, shape [2]
     {
         auto* const_op = block->add_operations();
         const_op->set_type("const");
+        // "name" attribute
+        auto& name_attr = (*const_op->mutable_attributes())["name"];
+        name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::STRING);
+        name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(strides_name);
+        // "val" attribute with type
         auto& val = (*const_op->mutable_attributes())["val"];
+        auto* val_type = val.mutable_type()->mutable_tensortype();
+        val_type->set_datatype(CoreML::Specification::MILSpec::DataType::INT32);
+        val_type->set_rank(1);
+        val_type->add_dimensions()->mutable_constant()->set_size(2);
         auto* int_vals = val.mutable_immediatevalue()->mutable_tensor()->mutable_ints();
         int_vals->add_values(1);
         int_vals->add_values(1);
+        // Output
         auto* out = const_op->add_outputs();
         out->set_name(strides_name);
+        auto* tt = out->mutable_type()->mutable_tensortype();
+        tt->set_datatype(CoreML::Specification::MILSpec::DataType::INT32);
+        tt->set_rank(1);
+        tt->add_dimensions()->mutable_constant()->set_size(2);
     }
 
-    // Add groups constant (always 1 for standard convolution)
+    // Add groups constant (always 1 for standard convolution) - INT32 scalar type
     {
         auto* const_op = block->add_operations();
         const_op->set_type("const");
+        // "name" attribute
+        auto& name_attr = (*const_op->mutable_attributes())["name"];
+        name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::STRING);
+        name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(groups_name);
+        // "val" attribute with type (scalar)
         auto& val = (*const_op->mutable_attributes())["val"];
+        val.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::INT32);
         val.mutable_immediatevalue()->mutable_tensor()->mutable_ints()->add_values(1);
+        // Output
         auto* out = const_op->add_outputs();
         out->set_name(groups_name);
+        out->mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::INT32);
     }
 
-    // Add pad constant [0, 0, 0, 0] for "same" padding
+    // Add pad constant [0, 0, 0, 0] for "same" padding - INT32 type, shape [4]
     {
         auto* const_op = block->add_operations();
         const_op->set_type("const");
+        // "name" attribute
+        auto& name_attr = (*const_op->mutable_attributes())["name"];
+        name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::STRING);
+        name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(pad_name);
+        // "val" attribute with type
         auto& val = (*const_op->mutable_attributes())["val"];
+        auto* val_type = val.mutable_type()->mutable_tensortype();
+        val_type->set_datatype(CoreML::Specification::MILSpec::DataType::INT32);
+        val_type->set_rank(1);
+        val_type->add_dimensions()->mutable_constant()->set_size(4);
         auto* int_vals = val.mutable_immediatevalue()->mutable_tensor()->mutable_ints();
         int_vals->add_values(0);
         int_vals->add_values(0);
         int_vals->add_values(0);
         int_vals->add_values(0);
+        // Output
         auto* out = const_op->add_outputs();
         out->set_name(pad_name);
+        auto* tt = out->mutable_type()->mutable_tensortype();
+        tt->set_datatype(CoreML::Specification::MILSpec::DataType::INT32);
+        tt->set_rank(1);
+        tt->add_dimensions()->mutable_constant()->set_size(4);
     }
 
     // Add conv operation referencing all const parameters
@@ -236,12 +430,88 @@ void MILBuilder::addConvOp(CoreML::Specification::MILSpec::Block* block,
     inputs["weight"].add_arguments()->set_name(weight_name);
     inputs["x"].add_arguments()->set_name(input);
 
-    // Output
+    // Output with dimensions [batch, out_channels, height, width]
     auto* out = op->add_outputs();
     out->set_name(output);
     auto* out_type = out->mutable_type()->mutable_tensortype();
     out_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
     out_type->set_rank(4);
+    out_type->add_dimensions()->mutable_constant()->set_size(1);  // batch
+    out_type->add_dimensions()->mutable_constant()->set_size(layer.out_channels);
+    out_type->add_dimensions()->mutable_constant()->set_size(m_board_y_size);
+    out_type->add_dimensions()->mutable_constant()->set_size(m_board_x_size);
+}
+
+// Helper: Set output tensor type with 4D shape [1, C, H, W]
+void setTensorOutput4D(CoreML::Specification::MILSpec::Operation* op,
+                        const std::string& name,
+                        int channels, int height, int width) {
+    auto* out = op->add_outputs();
+    out->set_name(name);
+    auto* tt = out->mutable_type()->mutable_tensortype();
+    tt->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    tt->set_rank(4);
+    tt->add_dimensions()->mutable_constant()->set_size(1);
+    tt->add_dimensions()->mutable_constant()->set_size(channels);
+    tt->add_dimensions()->mutable_constant()->set_size(height);
+    tt->add_dimensions()->mutable_constant()->set_size(width);
+}
+
+// Helper: Set output tensor type with 2D shape [1, C]
+void setTensorOutput2D(CoreML::Specification::MILSpec::Operation* op,
+                        const std::string& name,
+                        int channels) {
+    auto* out = op->add_outputs();
+    out->set_name(name);
+    auto* tt = out->mutable_type()->mutable_tensortype();
+    tt->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    tt->set_rank(2);
+    tt->add_dimensions()->mutable_constant()->set_size(1);
+    tt->add_dimensions()->mutable_constant()->set_size(channels);
+}
+
+// Helper: Set output tensor type with 4D shape [1, C, 1, 1] for pooled results
+void setTensorOutputPooled4D(CoreML::Specification::MILSpec::Operation* op,
+                              const std::string& name,
+                              int channels) {
+    auto* out = op->add_outputs();
+    out->set_name(name);
+    auto* tt = out->mutable_type()->mutable_tensortype();
+    tt->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    tt->set_rank(4);
+    tt->add_dimensions()->mutable_constant()->set_size(1);
+    tt->add_dimensions()->mutable_constant()->set_size(channels);
+    tt->add_dimensions()->mutable_constant()->set_size(1);
+    tt->add_dimensions()->mutable_constant()->set_size(1);
+}
+
+// Helper: Set output tensor type with 4D shape [1, 1, 1, 1] (for mask operations)
+void setTensorOutputMask4D(CoreML::Specification::MILSpec::Operation* op,
+                            const std::string& name) {
+    auto* out = op->add_outputs();
+    out->set_name(name);
+    auto* tt = out->mutable_type()->mutable_tensortype();
+    tt->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    tt->set_rank(4);
+    tt->add_dimensions()->mutable_constant()->set_size(1);
+    tt->add_dimensions()->mutable_constant()->set_size(1);
+    tt->add_dimensions()->mutable_constant()->set_size(1);
+    tt->add_dimensions()->mutable_constant()->set_size(1);
+}
+
+// Helper: Set output tensor type with 4D shape [1, 1, H, W] (for mask spatial operations)
+void setTensorOutputMaskSpatial4D(CoreML::Specification::MILSpec::Operation* op,
+                                   const std::string& name,
+                                   int height, int width) {
+    auto* out = op->add_outputs();
+    out->set_name(name);
+    auto* tt = out->mutable_type()->mutable_tensortype();
+    tt->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    tt->set_rank(4);
+    tt->add_dimensions()->mutable_constant()->set_size(1);
+    tt->add_dimensions()->mutable_constant()->set_size(1);
+    tt->add_dimensions()->mutable_constant()->set_size(height);
+    tt->add_dimensions()->mutable_constant()->set_size(width);
 }
 
 void MILBuilder::addBatchNormActivationOps(CoreML::Specification::MILSpec::Block* block,
@@ -267,9 +537,7 @@ void MILBuilder::addBatchNormActivationOps(CoreML::Specification::MILSpec::Block
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(input);
         inputs["y"].add_arguments()->set_name(scale_name);
-        auto* out = op->add_outputs();
-        out->set_name(scaled_name);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        setTensorOutput4D(op, scaled_name, bn.num_channels, m_board_y_size, m_board_x_size);
     }
 
     // Add: scaled + bias
@@ -280,9 +548,7 @@ void MILBuilder::addBatchNormActivationOps(CoreML::Specification::MILSpec::Block
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(scaled_name);
         inputs["y"].add_arguments()->set_name(bias_name);
-        auto* out = op->add_outputs();
-        out->set_name(biased_name);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        setTensorOutput4D(op, biased_name, bn.num_channels, m_board_y_size, m_board_x_size);
     }
 
     std::string bn_output = biased_name;
@@ -295,9 +561,7 @@ void MILBuilder::addBatchNormActivationOps(CoreML::Specification::MILSpec::Block
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(bn_output);
         inputs["y"].add_arguments()->set_name(mask);
-        auto* out = op->add_outputs();
-        out->set_name(masked_name);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        setTensorOutput4D(op, masked_name, bn.num_channels, m_board_y_size, m_board_x_size);
         bn_output = masked_name;
     }
 
@@ -309,17 +573,13 @@ void MILBuilder::addBatchNormActivationOps(CoreML::Specification::MILSpec::Block
         op->set_type("identity");
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(bn_output);
-        auto* out = op->add_outputs();
-        out->set_name(output);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        setTensorOutput4D(op, output, bn.num_channels, m_board_y_size, m_board_x_size);
     } else if (act.activation_type == ActivationType::ReLU) {
         auto* op = block->add_operations();
         op->set_type("relu");
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(bn_output);
-        auto* out = op->add_outputs();
-        out->set_name(output);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        setTensorOutput4D(op, output, bn.num_channels, m_board_y_size, m_board_x_size);
     } else if (act.activation_type == ActivationType::Mish) {
         addMishOps(block, bn_output, output);
     }
@@ -421,24 +681,46 @@ void MILBuilder::addMatMulOp(CoreML::Specification::MILSpec::Block* block,
     // Add weight constant
     addConstOp(block, weight_name, layer.weights, layer.getWeightShape());
 
-    // Add transpose_x constant (false)
+    // Add transpose_x constant (false) - BOOL type
     {
         auto* const_op = block->add_operations();
         const_op->set_type("const");
+        // "name" attribute
+        auto& name_attr = (*const_op->mutable_attributes())["name"];
+        name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::STRING);
+        name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(transpose_x_name);
+        // "val" attribute with type
         auto& val = (*const_op->mutable_attributes())["val"];
+        val.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::BOOL);
         val.mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(false);
+        // Output
         auto* out = const_op->add_outputs();
         out->set_name(transpose_x_name);
+        out->mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::BOOL);
     }
 
-    // Add transpose_y constant (false)
+    // Add transpose_y constant (false) - BOOL type
     {
         auto* const_op = block->add_operations();
         const_op->set_type("const");
+        // "name" attribute
+        auto& name_attr = (*const_op->mutable_attributes())["name"];
+        name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::STRING);
+        name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(transpose_y_name);
+        // "val" attribute with type
         auto& val = (*const_op->mutable_attributes())["val"];
+        val.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::BOOL);
         val.mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(false);
+        // Output
         auto* out = const_op->add_outputs();
         out->set_name(transpose_y_name);
+        out->mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::BOOL);
     }
 
     // Add matmul operation
@@ -450,9 +732,14 @@ void MILBuilder::addMatMulOp(CoreML::Specification::MILSpec::Block* block,
     inputs["x"].add_arguments()->set_name(input);
     inputs["y"].add_arguments()->set_name(weight_name);
 
+    // Output with 2D shape [1, out_channels]
     auto* out = op->add_outputs();
     out->set_name(output);
-    out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    auto* out_type = out->mutable_type()->mutable_tensortype();
+    out_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    out_type->set_rank(2);
+    out_type->add_dimensions()->mutable_constant()->set_size(1);
+    out_type->add_dimensions()->mutable_constant()->set_size(layer.out_channels);
 }
 
 void MILBuilder::addMatBiasOp(CoreML::Specification::MILSpec::Block* block,
@@ -471,14 +758,70 @@ void MILBuilder::addMatBiasOp(CoreML::Specification::MILSpec::Block* block,
     inputs["x"].add_arguments()->set_name(input);
     inputs["y"].add_arguments()->set_name(bias_name);
 
+    // Output with 2D shape [1, num_channels] (same as matmul output)
     auto* out = op->add_outputs();
     out->set_name(output);
-    out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    auto* out_type = out->mutable_type()->mutable_tensortype();
+    out_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    out_type->set_rank(2);
+    out_type->add_dimensions()->mutable_constant()->set_size(1);
+    out_type->add_dimensions()->mutable_constant()->set_size(layer.num_channels);
+}
+
+void MILBuilder::addLinearOp(CoreML::Specification::MILSpec::Block* block,
+                             const std::string& input,
+                             const MatMulLayerDesc& matmul,
+                             const MatBiasLayerDesc& bias,
+                             const std::string& output) {
+    // Create const operations for weight and bias (matching Python's linear op structure)
+    // Core ML linear expects weights in [out_channels, in_channels] format
+    // KataGo matmul stores weights in [in_channels, out_channels] format
+    // We need to transpose the weights to match Python's fuse_matmul_weight_bias pass
+    std::string weight_name = output + "_weight_0";
+    std::string bias_name = output + "_bias_0";
+
+    // Transpose weights from [in_channels, out_channels] to [out_channels, in_channels]
+    const int in_ch = matmul.in_channels;
+    const int out_ch = matmul.out_channels;
+    std::vector<float> transposed_weights(matmul.weights.size());
+    for (int i = 0; i < in_ch; ++i) {
+        for (int j = 0; j < out_ch; ++j) {
+            // Original: weights[i * out_ch + j] (row-major [in_ch, out_ch])
+            // Transposed: weights[j * in_ch + i] (row-major [out_ch, in_ch])
+            transposed_weights[j * in_ch + i] = matmul.weights[i * out_ch + j];
+        }
+    }
+
+    // Add transposed weight constant with shape [out_channels, in_channels]
+    std::vector<int64_t> transposed_shape = {static_cast<int64_t>(out_ch), static_cast<int64_t>(in_ch)};
+    addConstOp(block, weight_name, transposed_weights, transposed_shape);
+
+    // Add bias constant
+    std::vector<int64_t> bias_shape = {static_cast<int64_t>(bias.num_channels)};
+    addConstOp(block, bias_name, bias.weights, bias_shape);
+
+    // Add linear operation
+    auto* op = block->add_operations();
+    op->set_type("linear");
+    auto& inputs = *op->mutable_inputs();
+    inputs["x"].add_arguments()->set_name(input);
+    inputs["weight"].add_arguments()->set_name(weight_name);
+    inputs["bias"].add_arguments()->set_name(bias_name);
+
+    // Output with 2D shape [1, out_channels]
+    auto* out = op->add_outputs();
+    out->set_name(output);
+    auto* out_type = out->mutable_type()->mutable_tensortype();
+    out_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+    out_type->set_rank(2);
+    out_type->add_dimensions()->mutable_constant()->set_size(1);
+    out_type->add_dimensions()->mutable_constant()->set_size(matmul.out_channels);
 }
 
 void MILBuilder::addGlobalPoolingOps(CoreML::Specification::MILSpec::Block* block,
                                      const std::string& input,
                                      const std::string& mask,
+                                     int channels,
                                      const std::string& output) {
     // KataGo global pooling produces: [mean, mean_scaled, max]
     // mean_scaled = mean * (sqrt(count) - 14) * 0.1
@@ -489,110 +832,103 @@ void MILBuilder::addGlobalPoolingOps(CoreML::Specification::MILSpec::Block* bloc
 
         // Mean pooling: sum / count
         std::string sum_name = output + "_sum";
+        std::string sum_axes = sum_name + "_axes_0";
+        std::string sum_keep_dims = sum_name + "_keep_dims_0";
+        addIntArrayConstOp(block, sum_axes, {2, 3});
+        addBoolScalarConstOp(block, sum_keep_dims, true);
         {
             auto* op = block->add_operations();
             op->set_type("reduce_sum");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(input);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            attrs["keep_dims"].mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(true);
-            auto* out = op->add_outputs();
-            out->set_name(sum_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(sum_axes);
+            inputs["keep_dims"].add_arguments()->set_name(sum_keep_dims);
+            setTensorOutputPooled4D(op, sum_name, channels);
         }
 
         std::string mean_name = output + "_mean";
+        std::string mean_y = mean_name + "_y_0";
+        addFloatScalarConstOp(block, mean_y, mc.mask_sum_reciprocal);
         {
             auto* op = block->add_operations();
             op->set_type("mul");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(sum_name);
-            inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(mc.mask_sum_reciprocal);
-            auto* out = op->add_outputs();
-            out->set_name(mean_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["y"].add_arguments()->set_name(mean_y);
+            setTensorOutputPooled4D(op, mean_name, channels);
         }
 
         // Max pooling
         std::string max_name = output + "_max";
+        std::string max_axes = max_name + "_axes_0";
+        std::string max_keep_dims = max_name + "_keep_dims_0";
+        addIntArrayConstOp(block, max_axes, {2, 3});
+        addBoolScalarConstOp(block, max_keep_dims, true);
         {
             auto* op = block->add_operations();
             op->set_type("reduce_max");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(input);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            attrs["keep_dims"].mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(true);
-            auto* out = op->add_outputs();
-            out->set_name(max_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(max_axes);
+            inputs["keep_dims"].add_arguments()->set_name(max_keep_dims);
+            setTensorOutputPooled4D(op, max_name, channels);
         }
 
         // Mean scaled = mean * constant
         std::string mean_scaled_name = output + "_mean_scaled";
+        std::string mean_scaled_y = mean_scaled_name + "_y_0";
+        addFloatScalarConstOp(block, mean_scaled_y, mc.mask_sum_sqrt_s14_m01);
         {
             auto* op = block->add_operations();
             op->set_type("mul");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_name);
-            inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(mc.mask_sum_sqrt_s14_m01);
-            auto* out = op->add_outputs();
-            out->set_name(mean_scaled_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["y"].add_arguments()->set_name(mean_scaled_y);
+            setTensorOutputPooled4D(op, mean_scaled_name, channels);
         }
 
         // Squeeze spatial dimensions: [N, C, 1, 1] -> [N, C]
         std::string mean_flat = output + "_mean_flat";
+        std::string mean_flat_axes = mean_flat + "_axes_0";
+        addIntArrayConstOp(block, mean_flat_axes, {2, 3});
         {
             auto* op = block->add_operations();
             op->set_type("squeeze");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_name);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            auto* out = op->add_outputs();
-            out->set_name(mean_flat);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(mean_flat_axes);
+            setTensorOutput2D(op, mean_flat, channels);
         }
 
         std::string mean_scaled_flat = output + "_mean_scaled_flat";
+        std::string mean_scaled_flat_axes = mean_scaled_flat + "_axes_0";
+        addIntArrayConstOp(block, mean_scaled_flat_axes, {2, 3});
         {
             auto* op = block->add_operations();
             op->set_type("squeeze");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_scaled_name);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            auto* out = op->add_outputs();
-            out->set_name(mean_scaled_flat);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(mean_scaled_flat_axes);
+            setTensorOutput2D(op, mean_scaled_flat, channels);
         }
 
         std::string max_flat = output + "_max_flat";
+        std::string max_flat_axes = max_flat + "_axes_0";
+        addIntArrayConstOp(block, max_flat_axes, {2, 3});
         {
             auto* op = block->add_operations();
             op->set_type("squeeze");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(max_name);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            auto* out = op->add_outputs();
-            out->set_name(max_flat);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(max_flat_axes);
+            setTensorOutput2D(op, max_flat, channels);
         }
 
         // Concatenate: [mean, mean_scaled, max]
+        std::string concat_axis = output + "_concat_axis_0";
+        std::string concat_interleave = output + "_concat_interleave_0";
+        addIntScalarConstOp(block, concat_axis, 1);
+        addBoolScalarConstOp(block, concat_interleave, false);
         {
             auto* op = block->add_operations();
             op->set_type("concat");
@@ -600,32 +936,29 @@ void MILBuilder::addGlobalPoolingOps(CoreML::Specification::MILSpec::Block* bloc
             inputs["values"].add_arguments()->set_name(mean_flat);
             inputs["values"].add_arguments()->set_name(mean_scaled_flat);
             inputs["values"].add_arguments()->set_name(max_flat);
-            auto& attrs = *op->mutable_attributes();
-            attrs["axis"].mutable_immediatevalue()->mutable_tensor()->mutable_ints()->add_values(1);
-            auto* out = op->add_outputs();
-            out->set_name(output);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axis"].add_arguments()->set_name(concat_axis);
+            inputs["interleave"].add_arguments()->set_name(concat_interleave);
+            setTensorOutput2D(op, output, channels * 3);
         }
     } else {
         // Full path with mask operations
-        // Count valid positions
+        // Count valid positions (mask is [1, 1, H, W], output is [1, 1, 1, 1])
         std::string mask_sum_name = output + "_mask_sum";
+        std::string mask_sum_axes = mask_sum_name + "_axes_0";
+        std::string mask_sum_keep_dims = mask_sum_name + "_keep_dims_0";
+        addIntArrayConstOp(block, mask_sum_axes, {2, 3});
+        addBoolScalarConstOp(block, mask_sum_keep_dims, true);
         {
             auto* op = block->add_operations();
             op->set_type("reduce_sum");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mask);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            attrs["keep_dims"].mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(true);
-            auto* out = op->add_outputs();
-            out->set_name(mask_sum_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(mask_sum_axes);
+            inputs["keep_dims"].add_arguments()->set_name(mask_sum_keep_dims);
+            setTensorOutputMask4D(op, mask_sum_name);
         }
 
-        // Masked input
+        // Masked input: [1, C, H, W] * [1, 1, H, W] -> [1, C, H, W]
         std::string masked_name = output + "_masked";
         {
             auto* op = block->add_operations();
@@ -633,29 +966,26 @@ void MILBuilder::addGlobalPoolingOps(CoreML::Specification::MILSpec::Block* bloc
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(input);
             inputs["y"].add_arguments()->set_name(mask);
-            auto* out = op->add_outputs();
-            out->set_name(masked_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            setTensorOutput4D(op, masked_name, channels, m_board_y_size, m_board_x_size);
         }
 
-        // Sum masked values
+        // Sum masked values: [1, C, H, W] -> [1, C, 1, 1]
         std::string sum_name = output + "_sum";
+        std::string sum_axes = sum_name + "_axes_0";
+        std::string sum_keep_dims = sum_name + "_keep_dims_0";
+        addIntArrayConstOp(block, sum_axes, {2, 3});
+        addBoolScalarConstOp(block, sum_keep_dims, true);
         {
             auto* op = block->add_operations();
             op->set_type("reduce_sum");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(masked_name);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            attrs["keep_dims"].mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(true);
-            auto* out = op->add_outputs();
-            out->set_name(sum_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(sum_axes);
+            inputs["keep_dims"].add_arguments()->set_name(sum_keep_dims);
+            setTensorOutputPooled4D(op, sum_name, channels);
         }
 
-        // Mean = sum / count
+        // Mean = sum / count: [1, C, 1, 1] / [1, 1, 1, 1] -> [1, C, 1, 1]
         std::string mean_name = output + "_mean";
         {
             auto* op = block->add_operations();
@@ -663,24 +993,24 @@ void MILBuilder::addGlobalPoolingOps(CoreML::Specification::MILSpec::Block* bloc
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(sum_name);
             inputs["y"].add_arguments()->set_name(mask_sum_name);
-            auto* out = op->add_outputs();
-            out->set_name(mean_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            setTensorOutputPooled4D(op, mean_name, channels);
         }
 
         // Max pooling (with mask adjustment)
-        std::string mask_minus_one = output + "_mask_m1";
+        // mask_minus_one: [1, 1, H, W] - scalar -> [1, 1, H, W]
+        std::string mask_minus_one = output + "_mask_minus_one";
+        std::string mask_minus_one_y = mask_minus_one + "_y_0";
+        addFloatScalarConstOp(block, mask_minus_one_y, 1.0f);
         {
             auto* op = block->add_operations();
             op->set_type("sub");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mask);
-            inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(1.0f);
-            auto* out = op->add_outputs();
-            out->set_name(mask_minus_one);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["y"].add_arguments()->set_name(mask_minus_one_y);
+            setTensorOutputMaskSpatial4D(op, mask_minus_one, m_board_y_size, m_board_x_size);
         }
 
+        // x_for_max: [1, C, H, W] + [1, 1, H, W] -> [1, C, H, W]
         std::string x_for_max = output + "_x_for_max";
         {
             auto* op = block->add_operations();
@@ -688,63 +1018,63 @@ void MILBuilder::addGlobalPoolingOps(CoreML::Specification::MILSpec::Block* bloc
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(masked_name);
             inputs["y"].add_arguments()->set_name(mask_minus_one);
-            auto* out = op->add_outputs();
-            out->set_name(x_for_max);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            setTensorOutput4D(op, x_for_max, channels, m_board_y_size, m_board_x_size);
         }
 
+        // max: [1, C, H, W] -> [1, C, 1, 1]
         std::string max_name = output + "_max";
+        std::string max_axes = max_name + "_axes_0";
+        std::string max_keep_dims = max_name + "_keep_dims_0";
+        addIntArrayConstOp(block, max_axes, {2, 3});
+        addBoolScalarConstOp(block, max_keep_dims, true);
         {
             auto* op = block->add_operations();
             op->set_type("reduce_max");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(x_for_max);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            attrs["keep_dims"].mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(true);
-            auto* out = op->add_outputs();
-            out->set_name(max_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(max_axes);
+            inputs["keep_dims"].add_arguments()->set_name(max_keep_dims);
+            setTensorOutputPooled4D(op, max_name, channels);
         }
 
         // Mean scaled = mean * (sqrt(count) - 14) * 0.1
-        std::string sqrt_mask = output + "_sqrt_mask";
+        // sqrt_mask_sum: [1, 1, 1, 1] -> [1, 1, 1, 1]
+        std::string sqrt_mask_sum = output + "_sqrt_mask_sum";
         {
             auto* op = block->add_operations();
             op->set_type("sqrt");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mask_sum_name);
-            auto* out = op->add_outputs();
-            out->set_name(sqrt_mask);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            setTensorOutputMask4D(op, sqrt_mask_sum);
         }
 
+        // sqrt_m14: [1, 1, 1, 1] - scalar -> [1, 1, 1, 1]
         std::string sqrt_m14 = output + "_sqrt_m14";
+        std::string sqrt_m14_y = sqrt_m14 + "_y_0";
+        addFloatScalarConstOp(block, sqrt_m14_y, 14.0f);
         {
             auto* op = block->add_operations();
             op->set_type("sub");
             auto& inputs = *op->mutable_inputs();
-            inputs["x"].add_arguments()->set_name(sqrt_mask);
-            inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(14.0f);
-            auto* out = op->add_outputs();
-            out->set_name(sqrt_m14);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["x"].add_arguments()->set_name(sqrt_mask_sum);
+            inputs["y"].add_arguments()->set_name(sqrt_m14_y);
+            setTensorOutputMask4D(op, sqrt_m14);
         }
 
+        // scaled_factor: [1, 1, 1, 1] * scalar -> [1, 1, 1, 1]
         std::string scaled_factor = output + "_scaled_factor";
+        std::string scaled_factor_y = scaled_factor + "_y_0";
+        addFloatScalarConstOp(block, scaled_factor_y, 0.1f);
         {
             auto* op = block->add_operations();
             op->set_type("mul");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(sqrt_m14);
-            inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(0.1f);
-            auto* out = op->add_outputs();
-            out->set_name(scaled_factor);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["y"].add_arguments()->set_name(scaled_factor_y);
+            setTensorOutputMask4D(op, scaled_factor);
         }
 
+        // mean_scaled: [1, C, 1, 1] * [1, 1, 1, 1] -> [1, C, 1, 1]
         std::string mean_scaled = output + "_mean_scaled";
         {
             auto* op = block->add_operations();
@@ -752,58 +1082,51 @@ void MILBuilder::addGlobalPoolingOps(CoreML::Specification::MILSpec::Block* bloc
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_name);
             inputs["y"].add_arguments()->set_name(scaled_factor);
-            auto* out = op->add_outputs();
-            out->set_name(mean_scaled);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            setTensorOutputPooled4D(op, mean_scaled, channels);
         }
 
-        // Squeeze spatial dimensions
+        // Squeeze spatial dimensions: [1, C, 1, 1] -> [1, C]
         std::string mean_flat = output + "_mean_flat";
+        std::string mean_flat_axes = mean_flat + "_axes_0";
+        addIntArrayConstOp(block, mean_flat_axes, {2, 3});
         {
             auto* op = block->add_operations();
             op->set_type("squeeze");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_name);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            auto* out = op->add_outputs();
-            out->set_name(mean_flat);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(mean_flat_axes);
+            setTensorOutput2D(op, mean_flat, channels);
         }
 
         std::string mean_scaled_flat = output + "_mean_scaled_flat";
+        std::string mean_scaled_flat_axes = mean_scaled_flat + "_axes_0";
+        addIntArrayConstOp(block, mean_scaled_flat_axes, {2, 3});
         {
             auto* op = block->add_operations();
             op->set_type("squeeze");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_scaled);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            auto* out = op->add_outputs();
-            out->set_name(mean_scaled_flat);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(mean_scaled_flat_axes);
+            setTensorOutput2D(op, mean_scaled_flat, channels);
         }
 
         std::string max_flat = output + "_max_flat";
+        std::string max_flat_axes = max_flat + "_axes_0";
+        addIntArrayConstOp(block, max_flat_axes, {2, 3});
         {
             auto* op = block->add_operations();
             op->set_type("squeeze");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(max_name);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            auto* out = op->add_outputs();
-            out->set_name(max_flat);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(max_flat_axes);
+            setTensorOutput2D(op, max_flat, channels);
         }
 
-        // Concatenate: [mean, mean_scaled, max]
+        // Concatenate: [mean, mean_scaled, max] -> [1, 3*C]
+        std::string concat_axis = output + "_concat_axis_0";
+        std::string concat_interleave = output + "_concat_interleave_0";
+        addIntScalarConstOp(block, concat_axis, 1);
+        addBoolScalarConstOp(block, concat_interleave, false);
         {
             auto* op = block->add_operations();
             op->set_type("concat");
@@ -811,11 +1134,9 @@ void MILBuilder::addGlobalPoolingOps(CoreML::Specification::MILSpec::Block* bloc
             inputs["values"].add_arguments()->set_name(mean_flat);
             inputs["values"].add_arguments()->set_name(mean_scaled_flat);
             inputs["values"].add_arguments()->set_name(max_flat);
-            auto& attrs = *op->mutable_attributes();
-            attrs["axis"].mutable_immediatevalue()->mutable_tensor()->mutable_ints()->add_values(1);
-            auto* out = op->add_outputs();
-            out->set_name(output);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axis"].add_arguments()->set_name(concat_axis);
+            inputs["interleave"].add_arguments()->set_name(concat_interleave);
+            setTensorOutput2D(op, output, channels * 3);
         }
     }
 }
@@ -823,6 +1144,7 @@ void MILBuilder::addGlobalPoolingOps(CoreML::Specification::MILSpec::Block* bloc
 void MILBuilder::addGlobalPoolingValueOps(CoreML::Specification::MILSpec::Block* block,
                                           const std::string& input,
                                           const std::string& mask,
+                                          int channels,
                                           const std::string& output) {
     // KataGo value head global pooling produces: [mean, mean_scaled, mean_f3]
     // mean_scaled = mean * (sqrt(count) - 14) * 0.1
@@ -832,108 +1154,102 @@ void MILBuilder::addGlobalPoolingValueOps(CoreML::Specification::MILSpec::Block*
         // Optimized path: use precomputed constants
         const auto& mc = m_ops.getMaskConstants();
 
-        // Mean pooling: sum / count
+        // Mean pooling: sum / count -> [1, C, 1, 1]
         std::string sum_name = output + "_sum";
+        std::string sum_axes = sum_name + "_axes_0";
+        std::string sum_keep_dims = sum_name + "_keep_dims_0";
+        addIntArrayConstOp(block, sum_axes, {2, 3});
+        addBoolScalarConstOp(block, sum_keep_dims, true);
         {
             auto* op = block->add_operations();
             op->set_type("reduce_sum");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(input);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            attrs["keep_dims"].mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(true);
-            auto* out = op->add_outputs();
-            out->set_name(sum_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(sum_axes);
+            inputs["keep_dims"].add_arguments()->set_name(sum_keep_dims);
+            setTensorOutputPooled4D(op, sum_name, channels);
         }
 
         std::string mean_name = output + "_mean";
+        std::string mean_y = mean_name + "_y_0";
+        addFloatScalarConstOp(block, mean_y, mc.mask_sum_reciprocal);
         {
             auto* op = block->add_operations();
             op->set_type("mul");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(sum_name);
-            inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(mc.mask_sum_reciprocal);
-            auto* out = op->add_outputs();
-            out->set_name(mean_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["y"].add_arguments()->set_name(mean_y);
+            setTensorOutputPooled4D(op, mean_name, channels);
         }
 
-        // Mean scaled = mean * constant
+        // Mean scaled = mean * constant -> [1, C, 1, 1]
         std::string mean_scaled_name = output + "_mean_scaled";
+        std::string mean_scaled_y = mean_scaled_name + "_y_0";
+        addFloatScalarConstOp(block, mean_scaled_y, mc.mask_sum_sqrt_s14_m01);
         {
             auto* op = block->add_operations();
             op->set_type("mul");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_name);
-            inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(mc.mask_sum_sqrt_s14_m01);
-            auto* out = op->add_outputs();
-            out->set_name(mean_scaled_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["y"].add_arguments()->set_name(mean_scaled_y);
+            setTensorOutputPooled4D(op, mean_scaled_name, channels);
         }
 
-        // Mean feature 3 = mean * constant
+        // Mean feature 3 = mean * constant -> [1, C, 1, 1]
         std::string mean_f3_name = output + "_mean_f3";
+        std::string mean_f3_y = mean_f3_name + "_y_0";
+        addFloatScalarConstOp(block, mean_f3_y, mc.mask_sum_sqrt_s14_m01_sq_s01);
         {
             auto* op = block->add_operations();
             op->set_type("mul");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_name);
-            inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(mc.mask_sum_sqrt_s14_m01_sq_s01);
-            auto* out = op->add_outputs();
-            out->set_name(mean_f3_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["y"].add_arguments()->set_name(mean_f3_y);
+            setTensorOutputPooled4D(op, mean_f3_name, channels);
         }
 
         // Squeeze spatial dimensions: [N, C, 1, 1] -> [N, C]
         std::string mean_flat = output + "_mean_flat";
+        std::string mean_flat_axes = mean_flat + "_axes_0";
+        addIntArrayConstOp(block, mean_flat_axes, {2, 3});
         {
             auto* op = block->add_operations();
             op->set_type("squeeze");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_name);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            auto* out = op->add_outputs();
-            out->set_name(mean_flat);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(mean_flat_axes);
+            setTensorOutput2D(op, mean_flat, channels);
         }
 
         std::string mean_scaled_flat = output + "_mean_scaled_flat";
+        std::string mean_scaled_flat_axes = mean_scaled_flat + "_axes_0";
+        addIntArrayConstOp(block, mean_scaled_flat_axes, {2, 3});
         {
             auto* op = block->add_operations();
             op->set_type("squeeze");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_scaled_name);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            auto* out = op->add_outputs();
-            out->set_name(mean_scaled_flat);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(mean_scaled_flat_axes);
+            setTensorOutput2D(op, mean_scaled_flat, channels);
         }
 
         std::string mean_f3_flat = output + "_mean_f3_flat";
+        std::string mean_f3_flat_axes = mean_f3_flat + "_axes_0";
+        addIntArrayConstOp(block, mean_f3_flat_axes, {2, 3});
         {
             auto* op = block->add_operations();
             op->set_type("squeeze");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_f3_name);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            auto* out = op->add_outputs();
-            out->set_name(mean_f3_flat);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(mean_f3_flat_axes);
+            setTensorOutput2D(op, mean_f3_flat, channels);
         }
 
-        // Concatenate: [mean, mean_scaled, mean_f3]
+        // Concatenate: [mean, mean_scaled, mean_f3] -> [1, 3*C]
+        std::string concat_axis = output + "_concat_axis_0";
+        std::string concat_interleave = output + "_concat_interleave_0";
+        addIntScalarConstOp(block, concat_axis, 1);
+        addBoolScalarConstOp(block, concat_interleave, false);
         {
             auto* op = block->add_operations();
             op->set_type("concat");
@@ -941,32 +1257,29 @@ void MILBuilder::addGlobalPoolingValueOps(CoreML::Specification::MILSpec::Block*
             inputs["values"].add_arguments()->set_name(mean_flat);
             inputs["values"].add_arguments()->set_name(mean_scaled_flat);
             inputs["values"].add_arguments()->set_name(mean_f3_flat);
-            auto& attrs = *op->mutable_attributes();
-            attrs["axis"].mutable_immediatevalue()->mutable_tensor()->mutable_ints()->add_values(1);
-            auto* out = op->add_outputs();
-            out->set_name(output);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axis"].add_arguments()->set_name(concat_axis);
+            inputs["interleave"].add_arguments()->set_name(concat_interleave);
+            setTensorOutput2D(op, output, channels * 3);
         }
     } else {
         // Full path with mask operations
-        // Count valid positions
+        // Count valid positions: [1, 1, H, W] -> [1, 1, 1, 1]
         std::string mask_sum_name = output + "_mask_sum";
+        std::string mask_sum_axes = mask_sum_name + "_axes_0";
+        std::string mask_sum_keep_dims = mask_sum_name + "_keep_dims_0";
+        addIntArrayConstOp(block, mask_sum_axes, {2, 3});
+        addBoolScalarConstOp(block, mask_sum_keep_dims, true);
         {
             auto* op = block->add_operations();
             op->set_type("reduce_sum");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mask);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            attrs["keep_dims"].mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(true);
-            auto* out = op->add_outputs();
-            out->set_name(mask_sum_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(mask_sum_axes);
+            inputs["keep_dims"].add_arguments()->set_name(mask_sum_keep_dims);
+            setTensorOutputMask4D(op, mask_sum_name);
         }
 
-        // Masked input
+        // Masked input: [1, C, H, W] * [1, 1, H, W] -> [1, C, H, W]
         std::string masked_name = output + "_masked";
         {
             auto* op = block->add_operations();
@@ -974,29 +1287,26 @@ void MILBuilder::addGlobalPoolingValueOps(CoreML::Specification::MILSpec::Block*
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(input);
             inputs["y"].add_arguments()->set_name(mask);
-            auto* out = op->add_outputs();
-            out->set_name(masked_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            setTensorOutput4D(op, masked_name, channels, m_board_y_size, m_board_x_size);
         }
 
-        // Sum masked values
+        // Sum masked values: [1, C, H, W] -> [1, C, 1, 1]
         std::string sum_name = output + "_sum";
+        std::string sum_axes = sum_name + "_axes_0";
+        std::string sum_keep_dims = sum_name + "_keep_dims_0";
+        addIntArrayConstOp(block, sum_axes, {2, 3});
+        addBoolScalarConstOp(block, sum_keep_dims, true);
         {
             auto* op = block->add_operations();
             op->set_type("reduce_sum");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(masked_name);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            attrs["keep_dims"].mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(true);
-            auto* out = op->add_outputs();
-            out->set_name(sum_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(sum_axes);
+            inputs["keep_dims"].add_arguments()->set_name(sum_keep_dims);
+            setTensorOutputPooled4D(op, sum_name, channels);
         }
 
-        // Mean = sum / count
+        // Mean = sum / count: [1, C, 1, 1] / [1, 1, 1, 1] -> [1, C, 1, 1]
         std::string mean_name = output + "_mean";
         {
             auto* op = block->add_operations();
@@ -1004,48 +1314,46 @@ void MILBuilder::addGlobalPoolingValueOps(CoreML::Specification::MILSpec::Block*
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(sum_name);
             inputs["y"].add_arguments()->set_name(mask_sum_name);
-            auto* out = op->add_outputs();
-            out->set_name(mean_name);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            setTensorOutputPooled4D(op, mean_name, channels);
         }
 
-        // Compute (sqrt(count) - 14)
-        std::string sqrt_mask = output + "_sqrt_mask";
+        // Compute (sqrt(count) - 14): [1, 1, 1, 1] -> [1, 1, 1, 1]
+        std::string sqrt_mask_sum = output + "_sqrt_mask_sum";
         {
             auto* op = block->add_operations();
             op->set_type("sqrt");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mask_sum_name);
-            auto* out = op->add_outputs();
-            out->set_name(sqrt_mask);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            setTensorOutputMask4D(op, sqrt_mask_sum);
         }
 
         std::string sqrt_m14 = output + "_sqrt_m14";
+        std::string sqrt_m14_y = sqrt_m14 + "_y_0";
+        addFloatScalarConstOp(block, sqrt_m14_y, 14.0f);
         {
             auto* op = block->add_operations();
             op->set_type("sub");
             auto& inputs = *op->mutable_inputs();
-            inputs["x"].add_arguments()->set_name(sqrt_mask);
-            inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(14.0f);
-            auto* out = op->add_outputs();
-            out->set_name(sqrt_m14);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["x"].add_arguments()->set_name(sqrt_mask_sum);
+            inputs["y"].add_arguments()->set_name(sqrt_m14_y);
+            setTensorOutputMask4D(op, sqrt_m14);
         }
 
         // Feature 2: Mean * (sqrt(count) - 14) * 0.1
+        // scaled_factor: [1, 1, 1, 1] * scalar -> [1, 1, 1, 1]
         std::string scaled_factor = output + "_scaled_factor";
+        std::string scaled_factor_y = scaled_factor + "_y_0";
+        addFloatScalarConstOp(block, scaled_factor_y, 0.1f);
         {
             auto* op = block->add_operations();
             op->set_type("mul");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(sqrt_m14);
-            inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(0.1f);
-            auto* out = op->add_outputs();
-            out->set_name(scaled_factor);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["y"].add_arguments()->set_name(scaled_factor_y);
+            setTensorOutputMask4D(op, scaled_factor);
         }
 
+        // mean_scaled: [1, C, 1, 1] * [1, 1, 1, 1] -> [1, C, 1, 1]
         std::string mean_scaled = output + "_mean_scaled";
         {
             auto* op = block->add_operations();
@@ -1053,12 +1361,11 @@ void MILBuilder::addGlobalPoolingValueOps(CoreML::Specification::MILSpec::Block*
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_name);
             inputs["y"].add_arguments()->set_name(scaled_factor);
-            auto* out = op->add_outputs();
-            out->set_name(mean_scaled);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            setTensorOutputPooled4D(op, mean_scaled, channels);
         }
 
         // Feature 3: Mean * ((sqrt(count) - 14)^2 * 0.01 - 0.1)
+        // sqrt_m14_sq: [1, 1, 1, 1] * [1, 1, 1, 1] -> [1, 1, 1, 1]
         std::string sqrt_m14_sq = output + "_sqrt_m14_sq";
         {
             auto* op = block->add_operations();
@@ -1066,35 +1373,36 @@ void MILBuilder::addGlobalPoolingValueOps(CoreML::Specification::MILSpec::Block*
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(sqrt_m14);
             inputs["y"].add_arguments()->set_name(sqrt_m14);
-            auto* out = op->add_outputs();
-            out->set_name(sqrt_m14_sq);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            setTensorOutputMask4D(op, sqrt_m14_sq);
         }
 
+        // sq_01: [1, 1, 1, 1] * scalar -> [1, 1, 1, 1]
         std::string sq_01 = output + "_sq_01";
+        std::string sq_01_y = sq_01 + "_y_0";
+        addFloatScalarConstOp(block, sq_01_y, 0.01f);
         {
             auto* op = block->add_operations();
             op->set_type("mul");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(sqrt_m14_sq);
-            inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(0.01f);
-            auto* out = op->add_outputs();
-            out->set_name(sq_01);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["y"].add_arguments()->set_name(sq_01_y);
+            setTensorOutputMask4D(op, sq_01);
         }
 
+        // f3_factor: [1, 1, 1, 1] - scalar -> [1, 1, 1, 1]
         std::string f3_factor = output + "_f3_factor";
+        std::string f3_factor_y = f3_factor + "_y_0";
+        addFloatScalarConstOp(block, f3_factor_y, 0.1f);
         {
             auto* op = block->add_operations();
             op->set_type("sub");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(sq_01);
-            inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(0.1f);
-            auto* out = op->add_outputs();
-            out->set_name(f3_factor);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["y"].add_arguments()->set_name(f3_factor_y);
+            setTensorOutputMask4D(op, f3_factor);
         }
 
+        // mean_f3: [1, C, 1, 1] * [1, 1, 1, 1] -> [1, C, 1, 1]
         std::string mean_f3 = output + "_mean_f3";
         {
             auto* op = block->add_operations();
@@ -1102,58 +1410,51 @@ void MILBuilder::addGlobalPoolingValueOps(CoreML::Specification::MILSpec::Block*
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_name);
             inputs["y"].add_arguments()->set_name(f3_factor);
-            auto* out = op->add_outputs();
-            out->set_name(mean_f3);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            setTensorOutputPooled4D(op, mean_f3, channels);
         }
 
-        // Squeeze spatial dimensions
+        // Squeeze spatial dimensions: [1, C, 1, 1] -> [1, C]
         std::string mean_flat = output + "_mean_flat";
+        std::string mean_flat_axes = mean_flat + "_axes_0";
+        addIntArrayConstOp(block, mean_flat_axes, {2, 3});
         {
             auto* op = block->add_operations();
             op->set_type("squeeze");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_name);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            auto* out = op->add_outputs();
-            out->set_name(mean_flat);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(mean_flat_axes);
+            setTensorOutput2D(op, mean_flat, channels);
         }
 
         std::string mean_scaled_flat = output + "_mean_scaled_flat";
+        std::string mean_scaled_flat_axes = mean_scaled_flat + "_axes_0";
+        addIntArrayConstOp(block, mean_scaled_flat_axes, {2, 3});
         {
             auto* op = block->add_operations();
             op->set_type("squeeze");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_scaled);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            auto* out = op->add_outputs();
-            out->set_name(mean_scaled_flat);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(mean_scaled_flat_axes);
+            setTensorOutput2D(op, mean_scaled_flat, channels);
         }
 
         std::string mean_f3_flat = output + "_mean_f3_flat";
+        std::string mean_f3_flat_axes = mean_f3_flat + "_axes_0";
+        addIntArrayConstOp(block, mean_f3_flat_axes, {2, 3});
         {
             auto* op = block->add_operations();
             op->set_type("squeeze");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(mean_f3);
-            auto& attrs = *op->mutable_attributes();
-            auto* axes_val = attrs["axes"].mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            axes_val->add_values(2);
-            axes_val->add_values(3);
-            auto* out = op->add_outputs();
-            out->set_name(mean_f3_flat);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axes"].add_arguments()->set_name(mean_f3_flat_axes);
+            setTensorOutput2D(op, mean_f3_flat, channels);
         }
 
-        // Concatenate: [mean, mean_scaled, mean_f3]
+        // Concatenate: [mean, mean_scaled, mean_f3] -> [1, 3*C]
+        std::string concat_axis = output + "_concat_axis_0";
+        std::string concat_interleave = output + "_concat_interleave_0";
+        addIntScalarConstOp(block, concat_axis, 1);
+        addBoolScalarConstOp(block, concat_interleave, false);
         {
             auto* op = block->add_operations();
             op->set_type("concat");
@@ -1161,11 +1462,9 @@ void MILBuilder::addGlobalPoolingValueOps(CoreML::Specification::MILSpec::Block*
             inputs["values"].add_arguments()->set_name(mean_flat);
             inputs["values"].add_arguments()->set_name(mean_scaled_flat);
             inputs["values"].add_arguments()->set_name(mean_f3_flat);
-            auto& attrs = *op->mutable_attributes();
-            attrs["axis"].mutable_immediatevalue()->mutable_tensor()->mutable_ints()->add_values(1);
-            auto* out = op->add_outputs();
-            out->set_name(output);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            inputs["axis"].add_arguments()->set_name(concat_axis);
+            inputs["interleave"].add_arguments()->set_name(concat_interleave);
+            setTensorOutput2D(op, output, channels * 3);
         }
     }
 }
@@ -1190,21 +1489,58 @@ std::string MILBuilder::buildTrunk(CoreML::Specification::MILSpec::Block* block,
     addMatMulOp(block, global_input, trunk.initial_matmul, global_bias);
 
     // Reshape global bias to [1, C, 1, 1]
+    // Create shape const first (matching Python structure)
     std::string global_bias_reshaped = genVarName("trunk_global_reshape");
+    std::string reshape_shape_name = global_bias_reshaped + "_shape_0";
+    {
+        auto* const_op = block->add_operations();
+        const_op->set_type("const");
+        // "name" attribute
+        auto& name_attr = (*const_op->mutable_attributes())["name"];
+        name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::STRING);
+        name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(reshape_shape_name);
+        // "val" attribute with type
+        auto& val = (*const_op->mutable_attributes())["val"];
+        auto* val_type = val.mutable_type()->mutable_tensortype();
+        val_type->set_datatype(CoreML::Specification::MILSpec::DataType::INT32);
+        val_type->set_rank(1);
+        val_type->add_dimensions()->mutable_constant()->set_size(4);
+        auto* int_vals = val.mutable_immediatevalue()->mutable_tensor()->mutable_ints();
+        int_vals->add_values(1);
+        int_vals->add_values(-1);
+        int_vals->add_values(1);
+        int_vals->add_values(1);
+        // Output
+        auto* out = const_op->add_outputs();
+        out->set_name(reshape_shape_name);
+        auto* out_type = out->mutable_type()->mutable_tensortype();
+        out_type->set_datatype(CoreML::Specification::MILSpec::DataType::INT32);
+        out_type->set_rank(1);
+        out_type->add_dimensions()->mutable_constant()->set_size(4);
+    }
     {
         auto* op = block->add_operations();
         op->set_type("reshape");
+        // "name" attribute
+        auto& name_attr = (*op->mutable_attributes())["name"];
+        name_attr.mutable_type()->mutable_tensortype()->set_datatype(
+            CoreML::Specification::MILSpec::DataType::STRING);
+        name_attr.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values(global_bias_reshaped);
+        // Inputs
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(global_bias);
-        auto& shape_arg = inputs["shape"];
-        auto* shape_val = shape_arg.add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-        shape_val->add_values(1);
-        shape_val->add_values(-1);
-        shape_val->add_values(1);
-        shape_val->add_values(1);
+        inputs["shape"].add_arguments()->set_name(reshape_shape_name);
+        // Output with dimensions
         auto* out = op->add_outputs();
         out->set_name(global_bias_reshaped);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        auto* out_type = out->mutable_type()->mutable_tensortype();
+        out_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        out_type->set_rank(4);
+        out_type->add_dimensions()->mutable_constant()->set_size(1);
+        out_type->add_dimensions()->mutable_constant()->set_size(trunk.initial_conv.out_channels);
+        out_type->add_dimensions()->mutable_constant()->set_size(1);
+        out_type->add_dimensions()->mutable_constant()->set_size(1);
     }
 
     // Add global bias
@@ -1215,9 +1551,16 @@ std::string MILBuilder::buildTrunk(CoreML::Specification::MILSpec::Block* block,
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(x);
         inputs["y"].add_arguments()->set_name(global_bias_reshaped);
+        // Output with 4D shape [1, C, H, W]
         auto* out = op->add_outputs();
         out->set_name(x_with_global);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        auto* out_type = out->mutable_type()->mutable_tensortype();
+        out_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        out_type->set_rank(4);
+        out_type->add_dimensions()->mutable_constant()->set_size(1);
+        out_type->add_dimensions()->mutable_constant()->set_size(trunk.trunk_num_channels);
+        out_type->add_dimensions()->mutable_constant()->set_size(m_board_y_size);
+        out_type->add_dimensions()->mutable_constant()->set_size(m_board_x_size);
     }
     x = x_with_global;
 
@@ -1227,20 +1570,24 @@ std::string MILBuilder::buildTrunk(CoreML::Specification::MILSpec::Block* block,
 
         // Reshape meta bias
         std::string meta_bias_reshaped = genVarName("trunk_meta_reshape");
+        std::string meta_bias_shape_name = meta_bias_reshaped + "_shape_0";
+        addIntArrayConstOp(block, meta_bias_shape_name, {1, -1, 1, 1});
         {
             auto* op = block->add_operations();
             op->set_type("reshape");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(meta_bias);
-            auto& shape_arg = inputs["shape"];
-            auto* shape_val = shape_arg.add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-            shape_val->add_values(1);
-            shape_val->add_values(-1);
-            shape_val->add_values(1);
-            shape_val->add_values(1);
+            inputs["shape"].add_arguments()->set_name(meta_bias_shape_name);
+            // Output with 4D shape [1, C, 1, 1]
             auto* out = op->add_outputs();
             out->set_name(meta_bias_reshaped);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            auto* out_type = out->mutable_type()->mutable_tensortype();
+            out_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            out_type->set_rank(4);
+            out_type->add_dimensions()->mutable_constant()->set_size(1);
+            out_type->add_dimensions()->mutable_constant()->set_size(trunk.trunk_num_channels);
+            out_type->add_dimensions()->mutable_constant()->set_size(1);
+            out_type->add_dimensions()->mutable_constant()->set_size(1);
         }
 
         // Add meta bias
@@ -1251,9 +1598,16 @@ std::string MILBuilder::buildTrunk(CoreML::Specification::MILSpec::Block* block,
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(x);
             inputs["y"].add_arguments()->set_name(meta_bias_reshaped);
+            // Output with 4D shape [1, C, H, W]
             auto* out = op->add_outputs();
             out->set_name(x_with_meta);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            auto* out_type = out->mutable_type()->mutable_tensortype();
+            out_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            out_type->set_rank(4);
+            out_type->add_dimensions()->mutable_constant()->set_size(1);
+            out_type->add_dimensions()->mutable_constant()->set_size(trunk.trunk_num_channels);
+            out_type->add_dimensions()->mutable_constant()->set_size(m_board_y_size);
+            out_type->add_dimensions()->mutable_constant()->set_size(m_board_x_size);
         }
         x = x_with_meta;
     }
@@ -1266,9 +1620,16 @@ std::string MILBuilder::buildTrunk(CoreML::Specification::MILSpec::Block* block,
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(x);
         inputs["y"].add_arguments()->set_name(mask);
+        // Output with 4D shape [1, C, H, W]
         auto* out = op->add_outputs();
         out->set_name(x_masked);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        auto* out_type = out->mutable_type()->mutable_tensortype();
+        out_type->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        out_type->set_rank(4);
+        out_type->add_dimensions()->mutable_constant()->set_size(1);
+        out_type->add_dimensions()->mutable_constant()->set_size(trunk.trunk_num_channels);
+        out_type->add_dimensions()->mutable_constant()->set_size(m_board_y_size);
+        out_type->add_dimensions()->mutable_constant()->set_size(m_board_x_size);
     }
     x = x_masked;
 
@@ -1325,9 +1686,8 @@ std::string MILBuilder::buildResidualBlock(CoreML::Specification::MILSpec::Block
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(conv2_out);
         inputs["y"].add_arguments()->set_name(input);
-        auto* out = op->add_outputs();
-        out->set_name(output);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        // Set proper 4D output type [1, C, H, W]
+        setTensorOutput4D(op, output, block_desc.final_conv.out_channels, m_board_y_size, m_board_x_size);
     }
 
     return output;
@@ -1356,7 +1716,7 @@ std::string MILBuilder::buildGlobalPoolingResidualBlock(CoreML::Specification::M
 
     // Global pooling
     std::string gpool_features = genVarName(prefix + "_gpool_features");
-    addGlobalPoolingOps(block, gpool_bn_out, mask, gpool_features);
+    addGlobalPoolingOps(block, gpool_bn_out, mask, block_desc.gpool_conv.out_channels, gpool_features);
 
     // Project to bias
     std::string gpool_bias = genVarName(prefix + "_gpool_bias");
@@ -1364,20 +1724,16 @@ std::string MILBuilder::buildGlobalPoolingResidualBlock(CoreML::Specification::M
 
     // Reshape bias
     std::string gpool_bias_reshaped = genVarName(prefix + "_gpool_bias_reshape");
+    std::string gpool_bias_reshape_shape = gpool_bias_reshaped + "_shape_0";
+    addIntArrayConstOp(block, gpool_bias_reshape_shape, {1, -1, 1, 1});
     {
         auto* op = block->add_operations();
         op->set_type("reshape");
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(gpool_bias);
-        auto& shape_arg = inputs["shape"];
-        auto* shape_val = shape_arg.add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-        shape_val->add_values(1);
-        shape_val->add_values(-1);
-        shape_val->add_values(1);
-        shape_val->add_values(1);
-        auto* out = op->add_outputs();
-        out->set_name(gpool_bias_reshaped);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        inputs["shape"].add_arguments()->set_name(gpool_bias_reshape_shape);
+        // Output is [1, regular_conv.out_channels, 1, 1]
+        setTensorOutputPooled4D(op, gpool_bias_reshaped, block_desc.regular_conv.out_channels);
     }
 
     // Add bias to regular path
@@ -1388,9 +1744,8 @@ std::string MILBuilder::buildGlobalPoolingResidualBlock(CoreML::Specification::M
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(regular_out);
         inputs["y"].add_arguments()->set_name(gpool_bias_reshaped);
-        auto* out = op->add_outputs();
-        out->set_name(combined);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        // Output is [1, regular_conv.out_channels, H, W]
+        setTensorOutput4D(op, combined, block_desc.regular_conv.out_channels, m_board_y_size, m_board_x_size);
     }
 
     // Mid BN + activation
@@ -1409,9 +1764,8 @@ std::string MILBuilder::buildGlobalPoolingResidualBlock(CoreML::Specification::M
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(final_conv_out);
         inputs["y"].add_arguments()->set_name(input);
-        auto* out = op->add_outputs();
-        out->set_name(output);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        // Set proper 4D output type [1, C, H, W]
+        setTensorOutput4D(op, output, block_desc.final_conv.out_channels, m_board_y_size, m_board_x_size);
     }
 
     return output;
@@ -1462,9 +1816,8 @@ std::string MILBuilder::buildNestedBottleneckBlock(CoreML::Specification::MILSpe
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(post_conv_out);
         inputs["y"].add_arguments()->set_name(input);
-        auto* out = op->add_outputs();
-        out->set_name(output);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        // Set proper 4D output type [1, C, H, W]
+        setTensorOutput4D(op, output, block_desc.post_conv.out_channels, m_board_y_size, m_board_x_size);
     }
 
     return output;
@@ -1490,7 +1843,7 @@ void MILBuilder::buildPolicyHead(CoreML::Specification::MILSpec::Block* block,
 
     // Global pooling on G1
     std::string g1_pooled = genVarName("policy_g1_pool");
-    addGlobalPoolingOps(block, g1, mask, g1_pooled);
+    addGlobalPoolingOps(block, g1, mask, ph.g1_conv.out_channels, g1_pooled);
 
     // Project to spatial bias
     std::string gpool_bias = genVarName("policy_gpool_bias");
@@ -1498,20 +1851,16 @@ void MILBuilder::buildPolicyHead(CoreML::Specification::MILSpec::Block* block,
 
     // Reshape bias
     std::string gpool_bias_reshaped = genVarName("policy_gpool_bias_reshape");
+    std::string policy_gpool_reshape_shape = gpool_bias_reshaped + "_shape_0";
+    addIntArrayConstOp(block, policy_gpool_reshape_shape, {1, -1, 1, 1});
     {
         auto* op = block->add_operations();
         op->set_type("reshape");
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(gpool_bias);
-        auto& shape_arg = inputs["shape"];
-        auto* shape_val = shape_arg.add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-        shape_val->add_values(1);
-        shape_val->add_values(-1);
-        shape_val->add_values(1);
-        shape_val->add_values(1);
-        auto* out = op->add_outputs();
-        out->set_name(gpool_bias_reshaped);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        inputs["shape"].add_arguments()->set_name(policy_gpool_reshape_shape);
+        // Output is [1, p1_conv.out_channels, 1, 1]
+        setTensorOutputPooled4D(op, gpool_bias_reshaped, ph.p1_conv.out_channels);
     }
 
     // Add bias to P1
@@ -1522,27 +1871,23 @@ void MILBuilder::buildPolicyHead(CoreML::Specification::MILSpec::Block* block,
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(p1);
         inputs["y"].add_arguments()->set_name(gpool_bias_reshaped);
-        auto* out = op->add_outputs();
-        out->set_name(p1_biased);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        // Output is [1, p1_conv.out_channels, H, W]
+        setTensorOutput4D(op, p1_biased, ph.p1_conv.out_channels, m_board_y_size, m_board_x_size);
     }
 
     // P1 BN + activation
     std::string p1_activated = genVarName("policy_p1_act");
     addBatchNormActivationOps(block, p1_biased, ph.p1_bn, ph.p1_activation, mask, p1_activated);
 
-    // P2 conv -> policy output
-    policy_out = "policy_output";
+    // P2 conv -> policy output (match Python name)
+    policy_out = "policy_p2_conv";
     addConvOp(block, p1_activated, ph.p2_conv, policy_out);
 
     // Pass move
     if (ph.gpool_to_pass_mul2.has_value()) {
-        // v15+: two-layer pass
-        std::string pass_hidden = genVarName("policy_pass_hidden");
-        addMatMulOp(block, g1_pooled, ph.gpool_to_pass_mul, pass_hidden);
-
+        // v15+: two-layer pass (first layer fused matmul+bias -> linear)
         std::string pass_biased = genVarName("policy_pass_biased");
-        addMatBiasOp(block, pass_hidden, *ph.gpool_to_pass_bias, pass_biased);
+        addLinearOp(block, g1_pooled, ph.gpool_to_pass_mul, *ph.gpool_to_pass_bias, pass_biased);
 
         // Activation
         std::string pass_activated = genVarName("policy_pass_act");
@@ -1551,20 +1896,18 @@ void MILBuilder::buildPolicyHead(CoreML::Specification::MILSpec::Block* block,
             op->set_type("relu");
             auto& inputs = *op->mutable_inputs();
             inputs["x"].add_arguments()->set_name(pass_biased);
-            auto* out = op->add_outputs();
-            out->set_name(pass_activated);
-            out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+            setTensorOutput2D(op, pass_activated, ph.gpool_to_pass_mul.out_channels);
         } else if (ph.pass_activation->activation_type == ActivationType::Mish) {
             addMishOps(block, pass_biased, pass_activated);
         } else {
             pass_activated = pass_biased;
         }
 
-        pass_out = "pass_output";
+        pass_out = "policy_pass_mul2";  // v15+ name (match Python)
         addMatMulOp(block, pass_activated, *ph.gpool_to_pass_mul2, pass_out);
     } else {
         // Pre-v15: single layer pass
-        pass_out = "pass_output";
+        pass_out = "policy_pass";  // pre-v15 name (match Python)
         addMatMulOp(block, g1_pooled, ph.gpool_to_pass_mul, pass_out);
     }
 }
@@ -1586,14 +1929,11 @@ void MILBuilder::buildValueHead(CoreML::Specification::MILSpec::Block* block,
 
     // Global pooling (value head version)
     std::string v1_pooled = genVarName("value_v1_pool");
-    addGlobalPoolingValueOps(block, v1, mask, v1_pooled);
+    addGlobalPoolingValueOps(block, v1, mask, vh.v1_conv.out_channels, v1_pooled);
 
-    // V2: linear + bias + activation
-    std::string v2_mul = genVarName("value_v2_mul");
-    addMatMulOp(block, v1_pooled, vh.v2_mul, v2_mul);
-
+    // V2: linear + activation (fused matmul+bias -> linear)
     std::string v2_bias = genVarName("value_v2_bias");
-    addMatBiasOp(block, v2_mul, vh.v2_bias, v2_bias);
+    addLinearOp(block, v1_pooled, vh.v2_mul, vh.v2_bias, v2_bias);
 
     std::string v2 = genVarName("value_v2");
     if (vh.v2_activation.activation_type == ActivationType::ReLU) {
@@ -1601,41 +1941,32 @@ void MILBuilder::buildValueHead(CoreML::Specification::MILSpec::Block* block,
         op->set_type("relu");
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(v2_bias);
-        auto* out = op->add_outputs();
-        out->set_name(v2);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        setTensorOutput2D(op, v2, vh.v2_mul.out_channels);
     } else if (vh.v2_activation.activation_type == ActivationType::Mish) {
         addMishOps(block, v2_bias, v2);
     } else {
         v2 = v2_bias;
     }
 
-    // V3: linear + bias -> value output
-    std::string v3_mul = genVarName("value_v3_mul");
-    addMatMulOp(block, v2, vh.v3_mul, v3_mul);
-    value_out = "value_output";
-    addMatBiasOp(block, v3_mul, vh.v3_bias, value_out);
+    // V3: linear -> value output (fused matmul+bias -> linear) (match Python name)
+    value_out = "value_v3_bias";
+    addLinearOp(block, v2, vh.v3_mul, vh.v3_bias, value_out);
 
-    // SV3: score value output
-    std::string sv3_mul = genVarName("value_sv3_mul");
-    addMatMulOp(block, v2, vh.sv3_mul, sv3_mul);
-    score_value_out = "score_value_output";
-    addMatBiasOp(block, sv3_mul, vh.sv3_bias, score_value_out);
+    // SV3: linear -> score value output (fused matmul+bias -> linear) (match Python name)
+    score_value_out = "value_sv3_bias";
+    addLinearOp(block, v2, vh.sv3_mul, vh.sv3_bias, score_value_out);
 
-    // Ownership conv
-    ownership_out = "ownership_output";
+    // Ownership conv (match Python name)
+    ownership_out = "value_ownership_conv";
     addConvOp(block, v1, vh.v_ownership_conv, ownership_out);
 }
 
 std::string MILBuilder::buildSGFMetadataEncoder(CoreML::Specification::MILSpec::Block* block,
                                                 const std::string& meta_input,
                                                 const SGFMetadataEncoderDesc& encoder) {
-    // Layer 1
-    std::string mul1 = genVarName("meta_mul1");
-    addMatMulOp(block, meta_input, encoder.mul1, mul1);
-
+    // Layer 1 (fused matmul+bias -> linear)
     std::string bias1 = genVarName("meta_bias1");
-    addMatBiasOp(block, mul1, encoder.bias1, bias1);
+    addLinearOp(block, meta_input, encoder.mul1, encoder.bias1, bias1);
 
     std::string act1 = genVarName("meta_act1");
     if (encoder.act1.activation_type == ActivationType::ReLU) {
@@ -1643,21 +1974,16 @@ std::string MILBuilder::buildSGFMetadataEncoder(CoreML::Specification::MILSpec::
         op->set_type("relu");
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(bias1);
-        auto* out = op->add_outputs();
-        out->set_name(act1);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        setTensorOutput2D(op, act1, encoder.mul1.out_channels);
     } else if (encoder.act1.activation_type == ActivationType::Mish) {
         addMishOps(block, bias1, act1);
     } else {
         act1 = bias1;
     }
 
-    // Layer 2
-    std::string mul2 = genVarName("meta_mul2");
-    addMatMulOp(block, act1, encoder.mul2, mul2);
-
+    // Layer 2 (fused matmul+bias -> linear)
     std::string bias2 = genVarName("meta_bias2");
-    addMatBiasOp(block, mul2, encoder.bias2, bias2);
+    addLinearOp(block, act1, encoder.mul2, encoder.bias2, bias2);
 
     std::string act2 = genVarName("meta_act2");
     if (encoder.act2.activation_type == ActivationType::ReLU) {
@@ -1665,9 +1991,7 @@ std::string MILBuilder::buildSGFMetadataEncoder(CoreML::Specification::MILSpec::
         op->set_type("relu");
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(bias2);
-        auto* out = op->add_outputs();
-        out->set_name(act2);
-        out->mutable_type()->mutable_tensortype()->set_datatype(CoreML::Specification::MILSpec::DataType::FLOAT32);
+        setTensorOutput2D(op, act2, encoder.mul2.out_channels);
     } else if (encoder.act2.activation_type == ActivationType::Mish) {
         addMishOps(block, bias2, act2);
     } else {
