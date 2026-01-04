@@ -130,7 +130,7 @@ def _create_mlpackage(
 
     # Save proto to disk as the root model file, and copy into the model package.
     spec_file = _tempfile.NamedTemporaryFile(suffix=_MLMODEL_EXTENSION)
-    spec_file.write(proto_spec.SerializeToString())
+    spec_file.write(proto_spec.SerializeToString(deterministic=True))
     spec_file.flush()
     package.setRootModel(spec_file.name, _MODEL_FILE_NAME, _MLPACKAGE_AUTHOR_NAME,
                          "CoreML Model Specification")
@@ -232,7 +232,7 @@ def save_spec(spec, filename, auto_set_specification_version=False, weights_dir=
         _create_mlpackage(spec, weights_dir=weights_dir, package_path=filename)
     else:
         with open(filename, "wb") as f:
-            f.write(spec.SerializeToString())
+            f.write(spec.SerializeToString(deterministic=True))
 
 
 def load_spec(model_path: str) -> "_proto.Model_pb2":

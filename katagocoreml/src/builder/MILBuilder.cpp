@@ -31,11 +31,11 @@ std::unique_ptr<CoreML::Specification::MILSpec::Program> MILBuilder::build() {
     // Create main function
     auto& functions = *program->mutable_functions();
     auto& main_func = functions["main"];
-    main_func.set_opset("CoreML6");
+    main_func.set_opset("CoreML5");
 
     // Create main block
     auto& blocks = *main_func.mutable_block_specializations();
-    auto& main_block = blocks["CoreML6"];
+    auto& main_block = blocks["CoreML5"];
 
     // Define inputs
     // spatial_input: [1, num_input_ch, board_y, board_x]
