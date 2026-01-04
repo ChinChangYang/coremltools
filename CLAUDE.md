@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-CoreMLTools is a Python package for converting machine learning models from third-party frameworks (TensorFlow, PyTorch, scikit-learn, XGBoost, etc.) to Apple's Core ML format. The codebase includes converters, an intermediate representation (MIL), optimization passes, and utilities for creating and manipulating .mlmodel files.
+This repository is a fork of CoreMLTools extended with a specialized KataGo converter. It includes:
+
+1. **CoreMLTools Base**: Python package for converting ML models (TensorFlow, PyTorch, scikit-learn, etc.) to Apple's Core ML format
+2. **KataGo Python Converter**: Native Python converter for KataGo neural network models (`coremltools/converters/katago/`)
+3. **KataGo C++ Converter**: Standalone C++ library for KataGo conversion without Python dependencies (`katagocoreml/`)
+
+The KataGo converters support model versions 8-16, board sizes 2x2 to 37x37, FLOAT32/FLOAT16 precision, and both standard and human SL (metadata) model variants.
 
 ## Build Commands
 
@@ -20,7 +26,7 @@ make env_force
 make env python=3.8  # or 3.9, 3.10, 3.11, 3.12, 3.13
 ```
 
-### Building
+### Building CoreMLTools
 ```bash
 # Build in debug mode (includes symbols)
 make build
@@ -35,7 +41,24 @@ make wheel
 make proto
 ```
 
+### Building KataGo C++ Converter
+```bash
+cd katagocoreml
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(sysctl -n hw.ncpu)
+
+# Build targets:
+# - libkatagocoreml.a (static library)
+# - katago2coreml (CLI tool)
+# - katagocoreml_tests (unit tests, if KATAGOCOREML_BUILD_TESTS=ON)
+```
+
+**C++ Dependencies**: CMake 3.14+, C++17 compiler, Protobuf, Abseil, zlib
+
 ### Testing
+
+#### CoreMLTools General Tests
 ```bash
 # Run all tests
 make test
@@ -51,6 +74,29 @@ make test TEST_PACKAGES="coremltools.test.optimize"
 
 # Run tests directly with pytest
 pytest coremltools/test/optimize/torch/quantization/
+```
+
+#### KataGo Converter Tests
+```bash
+# Run KataGo cross-validation tests (requires KataGo executable and model)
+pytest coremltools/test/converters/katago/test_cross_validation.py -v
+
+# Run specific test case
+pytest coremltools/test/converters/katago/test_cross_validation.py::test_cross_validation_19x19 -v
+
+# Run with verbose output showing tolerances
+pytest coremltools/test/converters/katago/test_cross_validation.py -v -s
+```
+
+**Test Prerequisites**:
+- KataGo model file (`.bin` or `.bin.gz`)
+- KataGo C++ executable with Eigen backend (for ground truth)
+- Set paths via environment variables or pytest fixtures
+
+#### KataGo C++ Tests
+```bash
+cd katagocoreml/build
+ctest --output-on-failure
 ```
 
 Test markers (see pytest.ini):
@@ -81,25 +127,87 @@ make clean
 
 # Delete all environments
 make clean_envs
+
+# Clean KataGo C++ build
+rm -rf katagocoreml/build
 ```
 
-## High-Level Architecture
+## KataGo Converter Architecture
+
+### Python Converter Pipeline
+
+```
+KataGo Binary Model (.bin/.bin.gz)
+    |
+[PARSER] _katago_parser.py - Parse binary format, extract weights
+    |
+[TYPES] _katago_types.py - Structured model description (KataGoModelDesc)
+    |
+[BUILDER] _katago_model_builder.py - Construct MIL program
+    |
+[OPS] _katago_ops.py - MIL operation builders for KataGo layers
+    |
+[COREMLTOOLS BACKEND] - Convert MIL to MLProgram protobuf
+    |
+Core ML Model (.mlpackage)
+```
+
+### C++ Converter Pipeline
+
+```
+KataGo Binary Model (.bin/.bin.gz)
+    |
+[PARSER] KataGoParser.cpp - Parse binary format (zlib for gzip)
+    |
+[TYPES] KataGoTypes.hpp - C++ model description structures
+    |
+[BUILDER] MILBuilder.cpp + Operations.cpp - Build MIL graph
+    |
+[SERIALIZER] CoreMLSerializer.cpp - Convert to MLProgram protobuf
+    |
+[WEIGHTS] WeightSerializer.cpp - Write MILBlob weight files
+    |
+Core ML Model (.mlpackage)
+```
+
+### KataGo Model Components
+
+**Trunk Architecture**:
+- Residual blocks (ordinary)
+- Global pooling residual blocks (with global features)
+- Nested bottleneck residual blocks
+
+**Heads**:
+- **Policy Head**: Move probability distribution
+- **Value Head**: Win/loss/draw probabilities, score, ownership
+
+**Optional Components**:
+- SGF metadata encoder (for human SL models) - 192-channel metadata input
+
+### Key Conversion Options
+
+| Option | Description |
+|--------|-------------|
+| `board_x_size`, `board_y_size` | Board dimensions (default 19x19) |
+| `compute_precision` | FLOAT32 or FLOAT16 |
+| `optimize_identity_mask` | Enable mask optimization (~6.5% speedup) |
+| `minimum_deployment_target` | iOS/macOS version target |
+
+## High-Level Architecture (CoreMLTools Base)
 
 ### Conversion Pipeline
 
-The model conversion follows this flow:
-
 ```
 Source Model (TF/PyTorch/sklearn/etc)
-    ↓
+    |
 [FRONTEND] - Loads source model, converts to MIL Program
-    ↓
+    |
 [MIL Program] - Model Intermediate Language (unified representation)
-    ↓
+    |
 [OPTIMIZATION PASSES] - Graph optimizations via PassPipeline
-    ↓
+    |
 [BACKEND] - Converts MIL to target format (neuralnetwork or mlprogram)
-    ↓
+    |
 Target Model (.mlmodel or .mlpackage)
 ```
 
@@ -169,10 +277,11 @@ Target Model (.mlmodel or .mlpackage)
 - Integration point for C++ bindings on macOS
 
 **Specialized Converters**:
-- `coremltools/converters/sklearn/` - scikit-learn → Core ML (27 converter files)
-- `coremltools/converters/xgboost/` - XGBoost → Core ML
-- `coremltools/converters/libsvm/` - LibSVM → Core ML
-- These bypass MIL and directly create protobuf models
+- `coremltools/converters/sklearn/` - scikit-learn -> Core ML (27 converter files)
+- `coremltools/converters/xgboost/` - XGBoost -> Core ML
+- `coremltools/converters/libsvm/` - LibSVM -> Core ML
+- `coremltools/converters/katago/` - KataGo -> Core ML
+- These bypass standard frontends and use specialized parsers
 
 **Optimization** (`coremltools/optimize/`):
 - `coreml/` - Post-conversion optimizations (quantization, palettization, pruning)
@@ -204,6 +313,30 @@ Target Model (.mlmodel or .mlpackage)
 
 ## Development Workflow
 
+### Converting a KataGo Model (Python)
+```python
+from coremltools.converters.katago import convert
+
+model = convert(
+    model_path="kata1-b18c384nbt-s9996604160-d4316597426.bin.gz",
+    board_x_size=19,
+    board_y_size=19,
+    compute_precision=ct.precision.FLOAT16,
+    optimize_identity_mask=True
+)
+model.save("KataGo.mlpackage")
+```
+
+### Converting a KataGo Model (C++ CLI)
+```bash
+./katago2coreml \
+    --board-x 19 --board-y 19 \
+    --float16 \
+    --optimize-identity-mask \
+    kata1-b18c384nbt-s9996604160-d4316597426.bin.gz \
+    KataGo.mlpackage
+```
+
 ### Adding a New Operation
 
 1. Define operation in `coremltools/converters/mil/mil/ops/defs/iOS<version>/`
@@ -228,8 +361,51 @@ Target Model (.mlmodel or .mlpackage)
 4. Update `_converters_entry.py` to route to new frontend
 5. Add comprehensive tests in frontend's `test/` directory
 
+### Modifying KataGo Converter
+
+**Python Changes**:
+1. Edit files in `coremltools/converters/katago/`
+2. Run cross-validation tests to verify correctness
+3. Use `scripts/analyze_tolerances.py` to check error distributions
+
+**C++ Changes**:
+1. Edit files in `katagocoreml/src/`
+2. Rebuild with `make` in build directory
+3. Run `ctest` for unit tests
+4. Run cross-validation against Python converter
+
 ## Important Files
 
+### KataGo Converter (Python)
+- `coremltools/converters/katago/__init__.py` - Public API
+- `coremltools/converters/katago/_converter.py` - Main convert() function
+- `coremltools/converters/katago/_katago_parser.py` - Binary model parser
+- `coremltools/converters/katago/_katago_model_builder.py` - MIL program builder
+- `coremltools/converters/katago/_katago_ops.py` - MIL operation builders
+- `coremltools/converters/katago/_katago_types.py` - Model type definitions
+
+### KataGo Converter (C++)
+- `katagocoreml/include/katagocoreml/KataGoConverter.hpp` - Public API
+- `katagocoreml/include/katagocoreml/Options.hpp` - Conversion options
+- `katagocoreml/src/parser/KataGoParser.cpp` - Binary model parser
+- `katagocoreml/src/builder/MILBuilder.cpp` - MIL program builder
+- `katagocoreml/src/builder/Operations.cpp` - MIL operation builders
+- `katagocoreml/src/serializer/CoreMLSerializer.cpp` - MLProgram serializer
+- `katagocoreml/src/serializer/WeightSerializer.cpp` - Weight file writer
+- `katagocoreml/tools/katago2coreml.cpp` - CLI tool
+
+### KataGo Tests & Validation
+- `coremltools/test/converters/katago/test_cross_validation.py` - Cross-validation tests
+- `coremltools/test/converters/katago/validation_utils.py` - Test utilities
+- `coremltools/test/converters/katago/conftest.py` - Pytest fixtures
+- `coremltools/test/converters/katago/test_inputs_*/` - Test input JSON files
+
+### KataGo Scripts
+- `scripts/generate_test_inputs.py` - Generate test input JSON files
+- `scripts/analyze_tolerances.py` - Analyze cross-validation error distributions
+- `scripts/benchmark_inference.py` - Measure Core ML inference performance
+
+### CoreMLTools Base
 - `coremltools/__init__.py` - Package entry point, exports main API
 - `coremltools/converters/_converters_entry.py` - Main `convert()` function
 - `coremltools/converters/mil/mil/builder.py` - MIL program construction
@@ -249,6 +425,31 @@ pytest coremltools/test/optimize/torch/quantization/test_quantization.py -v
 ### Running Tests for a Specific Converter
 ```bash
 pytest coremltools/converters/mil/frontend/torch/test/ -v
+```
+
+### Running KataGo Cross-Validation
+```bash
+# Set environment variables for test fixtures
+export KATAGO_MODEL_PATH=/path/to/model.bin.gz
+export KATAGO_EXECUTABLE=/path/to/katago
+
+pytest coremltools/test/converters/katago/test_cross_validation.py -v
+```
+
+### Analyzing KataGo Tolerance Errors
+```bash
+python scripts/analyze_tolerances.py \
+    --model /path/to/model.bin.gz \
+    --katago-executable /path/to/katago \
+    --board-size 19
+```
+
+### Benchmarking KataGo Inference
+```bash
+python scripts/benchmark_inference.py \
+    --model KataGo.mlpackage \
+    --warmup 10 \
+    --iterations 100
 ```
 
 ### Debugging Type Inference Issues
@@ -271,9 +472,10 @@ model = ct.convert(
 ```
 
 ### Working with C++ Code
-- C++ code is in `coremlpython/`, `milstoragepython/`, `mlmodel/`
-- Build C++ changes with `make build`
-- Python bindings are generated during build
+- CoreMLTools C++ code is in `coremlpython/`, `milstoragepython/`, `mlmodel/`
+- KataGo C++ code is in `katagocoreml/`
+- Build CoreMLTools C++ changes with `make build`
+- Build KataGo C++ changes with `cmake`/`make` in `katagocoreml/build/`
 
 ## Testing Structure
 
@@ -283,10 +485,19 @@ model = ct.convert(
   - `torch/` - PyTorch optimization tests
   - `coreml/` - Core ML optimization tests
 - `coremltools/test/converters/mil/` - MIL infrastructure tests
+- `coremltools/test/converters/katago/` - KataGo converter tests
 - Frontend-specific: `coremltools/converters/mil/frontend/*/test/`
+- KataGo C++ tests: `katagocoreml/tests/`
 
 ## Resources
 
+### KataGo Converter
+- [KataGo Converter Guide](docs/katago/README.md) - Comprehensive setup and usage guide
+- [Quick Start](docs/katago/QUICK_START.md) - 5-minute setup
+- [C++ Library README](katagocoreml/README.md) - Standalone C++ library documentation
+- [KataGo Repository](KataGo/) - KataGo submodule with Eigen backend
+
+### CoreMLTools
 - [Official Documentation](https://apple.github.io/coremltools/docs-guides/index.html)
 - [API Reference](https://apple.github.io/coremltools/index.html)
 - [Core ML Specification](https://apple.github.io/coremltools/mlmodel/index.html)
