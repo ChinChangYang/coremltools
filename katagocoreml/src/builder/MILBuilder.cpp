@@ -153,37 +153,88 @@ void MILBuilder::addConvOp(CoreML::Specification::MILSpec::Block* block,
                            const std::string& input,
                            const ConvLayerDesc& layer,
                            const std::string& output) {
+    // Create const operations for all parameters (matching Python structure)
+    std::string weight_name = output + "_weight_0";
+    std::string pad_type_name = output + "_pad_type_0";
+    std::string dilations_name = output + "_dilations_0";
+    std::string strides_name = output + "_strides_0";
+    std::string groups_name = output + "_groups_0";
+    std::string pad_name = output + "_pad_0";
+
     // Add weight constant
-    std::string weight_name = output + "_weight";
     addConstOp(block, weight_name, layer.weights, layer.getWeightShape());
 
-    // Add conv operation
+    // Add pad_type constant ("same")
+    {
+        auto* const_op = block->add_operations();
+        const_op->set_type("const");
+        auto& val = (*const_op->mutable_attributes())["val"];
+        val.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values("same");
+        auto* out = const_op->add_outputs();
+        out->set_name(pad_type_name);
+    }
+
+    // Add dilations constant
+    {
+        auto* const_op = block->add_operations();
+        const_op->set_type("const");
+        auto& val = (*const_op->mutable_attributes())["val"];
+        auto* int_vals = val.mutable_immediatevalue()->mutable_tensor()->mutable_ints();
+        int_vals->add_values(layer.dilation_y);
+        int_vals->add_values(layer.dilation_x);
+        auto* out = const_op->add_outputs();
+        out->set_name(dilations_name);
+    }
+
+    // Add strides constant
+    {
+        auto* const_op = block->add_operations();
+        const_op->set_type("const");
+        auto& val = (*const_op->mutable_attributes())["val"];
+        auto* int_vals = val.mutable_immediatevalue()->mutable_tensor()->mutable_ints();
+        int_vals->add_values(1);
+        int_vals->add_values(1);
+        auto* out = const_op->add_outputs();
+        out->set_name(strides_name);
+    }
+
+    // Add groups constant (always 1 for standard convolution)
+    {
+        auto* const_op = block->add_operations();
+        const_op->set_type("const");
+        auto& val = (*const_op->mutable_attributes())["val"];
+        val.mutable_immediatevalue()->mutable_tensor()->mutable_ints()->add_values(1);
+        auto* out = const_op->add_outputs();
+        out->set_name(groups_name);
+    }
+
+    // Add pad constant [0, 0, 0, 0] for "same" padding
+    {
+        auto* const_op = block->add_operations();
+        const_op->set_type("const");
+        auto& val = (*const_op->mutable_attributes())["val"];
+        auto* int_vals = val.mutable_immediatevalue()->mutable_tensor()->mutable_ints();
+        int_vals->add_values(0);
+        int_vals->add_values(0);
+        int_vals->add_values(0);
+        int_vals->add_values(0);
+        auto* out = const_op->add_outputs();
+        out->set_name(pad_name);
+    }
+
+    // Add conv operation referencing all const parameters
     auto* op = block->add_operations();
     op->set_type("conv");
 
-    // Inputs
+    // Inputs - reference const operations
     auto& inputs = *op->mutable_inputs();
-    inputs["x"].add_arguments()->set_name(input);
+    inputs["dilations"].add_arguments()->set_name(dilations_name);
+    inputs["groups"].add_arguments()->set_name(groups_name);
+    inputs["pad"].add_arguments()->set_name(pad_name);
+    inputs["pad_type"].add_arguments()->set_name(pad_type_name);
+    inputs["strides"].add_arguments()->set_name(strides_name);
     inputs["weight"].add_arguments()->set_name(weight_name);
-
-    // Attributes
-    auto& attrs = *op->mutable_attributes();
-
-    // pad_type = "same"
-    auto& pad_type = attrs["pad_type"];
-    pad_type.mutable_immediatevalue()->mutable_tensor()->mutable_strings()->add_values("same");
-
-    // dilations
-    auto& dilations = attrs["dilations"];
-    auto* dil_val = dilations.mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-    dil_val->add_values(layer.dilation_y);
-    dil_val->add_values(layer.dilation_x);
-
-    // strides
-    auto& strides = attrs["strides"];
-    auto* stride_val = strides.mutable_immediatevalue()->mutable_tensor()->mutable_ints();
-    stride_val->add_values(1);
-    stride_val->add_values(1);
+    inputs["x"].add_arguments()->set_name(input);
 
     // Output
     auto* out = op->add_outputs();
@@ -362,14 +413,40 @@ void MILBuilder::addMatMulOp(CoreML::Specification::MILSpec::Block* block,
                              const std::string& input,
                              const MatMulLayerDesc& layer,
                              const std::string& output) {
+    // Create const operations for all parameters (matching Python structure)
+    std::string weight_name = output + "_y_0";
+    std::string transpose_x_name = output + "_transpose_x_0";
+    std::string transpose_y_name = output + "_transpose_y_0";
+
     // Add weight constant
-    std::string weight_name = output + "_weight";
     addConstOp(block, weight_name, layer.weights, layer.getWeightShape());
+
+    // Add transpose_x constant (false)
+    {
+        auto* const_op = block->add_operations();
+        const_op->set_type("const");
+        auto& val = (*const_op->mutable_attributes())["val"];
+        val.mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(false);
+        auto* out = const_op->add_outputs();
+        out->set_name(transpose_x_name);
+    }
+
+    // Add transpose_y constant (false)
+    {
+        auto* const_op = block->add_operations();
+        const_op->set_type("const");
+        auto& val = (*const_op->mutable_attributes())["val"];
+        val.mutable_immediatevalue()->mutable_tensor()->mutable_bools()->add_values(false);
+        auto* out = const_op->add_outputs();
+        out->set_name(transpose_y_name);
+    }
 
     // Add matmul operation
     auto* op = block->add_operations();
     op->set_type("matmul");
     auto& inputs = *op->mutable_inputs();
+    inputs["transpose_x"].add_arguments()->set_name(transpose_x_name);
+    inputs["transpose_y"].add_arguments()->set_name(transpose_y_name);
     inputs["x"].add_arguments()->set_name(input);
     inputs["y"].add_arguments()->set_name(weight_name);
 
