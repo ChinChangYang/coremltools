@@ -131,18 +131,7 @@ class TestCppVsPythonConverterFP32:
         ],
     )
     @pytest.mark.parametrize("board_size", [9, 13, 19])
-    @pytest.mark.parametrize(
-        "optimize_mask",
-        [
-            False,
-            pytest.param(
-                True,
-                marks=pytest.mark.xfail(
-                    reason="C++ optimize_identity_mask produces different numerical results"
-                ),
-            ),
-        ],
-    )
+    @pytest.mark.parametrize("optimize_mask", [False, True])
     def test_fp32_inference_equivalent(
         self,
         model_name: str,

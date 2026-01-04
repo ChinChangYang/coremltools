@@ -23,7 +23,7 @@ struct MaskConstants {
     float mask_sum = 361.0f;  // 19 * 19
     float mask_sum_reciprocal = 1.0f / 361.0f;
     float mask_sum_sqrt_s14_m01 = 0.5f;  // (sqrt(361) - 14) * 0.1
-    float mask_sum_sqrt_s14_m01_sq_s01 = 0.15f;  // (0.5^2) * 0.01 - 0.1
+    float mask_sum_sqrt_s14_m01_sq_s01 = 0.15f;  // (0.5^2) - 0.1
 
     MaskConstants() = default;
 
@@ -33,7 +33,7 @@ struct MaskConstants {
         float sqrt_mask_sum = std::sqrt(mask_sum);
         mask_sum_sqrt_s14_m01 = (sqrt_mask_sum - 14.0f) * 0.1f;
         float sq = mask_sum_sqrt_s14_m01 * mask_sum_sqrt_s14_m01;
-        mask_sum_sqrt_s14_m01_sq_s01 = sq * 0.01f - 0.1f;
+        mask_sum_sqrt_s14_m01_sq_s01 = sq - 0.1f;
     }
 };
 
