@@ -158,7 +158,7 @@ std::unique_ptr<CoreML::Specification::MILSpec::Program> MILBuilder::build() {
                   {1, ph.p2_conv.out_channels, m_board_y_size, m_board_x_size});
 
         // Cast pass output: [1, 2] fp16 -> fp32
-        final_pass_out = ph.gpool_to_pass_mul2.has_value() ? "policy_pass_mul2" : "policy_pass";
+        final_pass_out = "policy_pass";  // Python uses policy_pass for all versions
         int pass_out_channels = ph.gpool_to_pass_mul2.has_value()
             ? ph.gpool_to_pass_mul2->out_channels
             : ph.gpool_to_pass_mul.out_channels;
@@ -720,15 +720,35 @@ void MILBuilder::addBatchNormActivationOps(CoreML::Specification::MILSpec::Block
         inputs["x"].add_arguments()->set_name(bn_output);
         setTensorOutput4D(op, output, bn.num_channels, m_board_y_size, m_board_x_size, m_weight_dtype);
     } else if (act.activation_type == ActivationType::Mish) {
-        addMishOps(block, bn_output, output);
+        addMishOps(block, bn_output, output, 4, bn.num_channels);
     }
 }
 
 void MILBuilder::addMishOps(CoreML::Specification::MILSpec::Block* block,
                             const std::string& input,
-                            const std::string& output) {
+                            const std::string& output,
+                            int rank,
+                            int channels) {
     // Mish: x / (1 + 2 / (e * (e + 2)))
     // e = exp(x)
+    //
+    // rank and channels are used to set output type info:
+    // - rank=4: spatial tensors [1, C, H, W] (uses m_board_y_size, m_board_x_size)
+    // - rank=2: vector tensors [1, C]
+
+    auto setOutputType = [&](CoreML::Specification::MILSpec::Operation* op, const std::string& name) {
+        auto* out = op->add_outputs();
+        out->set_name(name);
+        auto* out_type = out->mutable_type()->mutable_tensortype();
+        out_type->set_datatype(m_weight_dtype);
+        out_type->set_rank(rank);
+        out_type->add_dimensions()->mutable_constant()->set_size(1);
+        out_type->add_dimensions()->mutable_constant()->set_size(channels);
+        if (rank == 4) {
+            out_type->add_dimensions()->mutable_constant()->set_size(m_board_y_size);
+            out_type->add_dimensions()->mutable_constant()->set_size(m_board_x_size);
+        }
+    };
 
     std::string e = output + "_exp";
     std::string ep2 = output + "_ep2";
@@ -736,15 +756,19 @@ void MILBuilder::addMishOps(CoreML::Specification::MILSpec::Block* block,
     std::string tdemep2 = output + "_tdemep2";
     std::string optdemep2 = output + "_optdemep2";
 
+    // Create scalar constants for Mish computation
+    std::string const_one = output + "_const_1";
+    std::string const_two = output + "_const_2";
+    addFloatScalarConstOp(block, const_one, 1.0f);
+    addFloatScalarConstOp(block, const_two, 2.0f);
+
     // e = exp(x)
     {
         auto* op = block->add_operations();
         op->set_type("exp");
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(input);
-        auto* out = op->add_outputs();
-        out->set_name(e);
-        out->mutable_type()->mutable_tensortype()->set_datatype(m_weight_dtype);
+        setOutputType(op, e);
     }
 
     // ep2 = e + 2
@@ -753,10 +777,8 @@ void MILBuilder::addMishOps(CoreML::Specification::MILSpec::Block* block,
         op->set_type("add");
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(e);
-        inputs["y"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(2.0f);
-        auto* out = op->add_outputs();
-        out->set_name(ep2);
-        out->mutable_type()->mutable_tensortype()->set_datatype(m_weight_dtype);
+        inputs["y"].add_arguments()->set_name(const_two);
+        setOutputType(op, ep2);
     }
 
     // emep2 = e * ep2
@@ -766,9 +788,7 @@ void MILBuilder::addMishOps(CoreML::Specification::MILSpec::Block* block,
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(e);
         inputs["y"].add_arguments()->set_name(ep2);
-        auto* out = op->add_outputs();
-        out->set_name(emep2);
-        out->mutable_type()->mutable_tensortype()->set_datatype(m_weight_dtype);
+        setOutputType(op, emep2);
     }
 
     // tdemep2 = 2 / emep2
@@ -776,11 +796,9 @@ void MILBuilder::addMishOps(CoreML::Specification::MILSpec::Block* block,
         auto* op = block->add_operations();
         op->set_type("real_div");
         auto& inputs = *op->mutable_inputs();
-        inputs["x"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(2.0f);
+        inputs["x"].add_arguments()->set_name(const_two);
         inputs["y"].add_arguments()->set_name(emep2);
-        auto* out = op->add_outputs();
-        out->set_name(tdemep2);
-        out->mutable_type()->mutable_tensortype()->set_datatype(m_weight_dtype);
+        setOutputType(op, tdemep2);
     }
 
     // optdemep2 = 1 + tdemep2
@@ -788,11 +806,9 @@ void MILBuilder::addMishOps(CoreML::Specification::MILSpec::Block* block,
         auto* op = block->add_operations();
         op->set_type("add");
         auto& inputs = *op->mutable_inputs();
-        inputs["x"].add_arguments()->mutable_value()->mutable_immediatevalue()->mutable_tensor()->mutable_floats()->add_values(1.0f);
+        inputs["x"].add_arguments()->set_name(const_one);
         inputs["y"].add_arguments()->set_name(tdemep2);
-        auto* out = op->add_outputs();
-        out->set_name(optdemep2);
-        out->mutable_type()->mutable_tensortype()->set_datatype(m_weight_dtype);
+        setOutputType(op, optdemep2);
     }
 
     // output = x / optdemep2
@@ -802,9 +818,7 @@ void MILBuilder::addMishOps(CoreML::Specification::MILSpec::Block* block,
         auto& inputs = *op->mutable_inputs();
         inputs["x"].add_arguments()->set_name(input);
         inputs["y"].add_arguments()->set_name(optdemep2);
-        auto* out = op->add_outputs();
-        out->set_name(output);
-        out->mutable_type()->mutable_tensortype()->set_datatype(m_weight_dtype);
+        setOutputType(op, output);
     }
 }
 
@@ -2037,12 +2051,12 @@ void MILBuilder::buildPolicyHead(CoreML::Specification::MILSpec::Block* block,
             inputs["x"].add_arguments()->set_name(pass_biased);
             setTensorOutput2D(op, pass_activated, ph.gpool_to_pass_mul.out_channels, m_weight_dtype);
         } else if (ph.pass_activation->activation_type == ActivationType::Mish) {
-            addMishOps(block, pass_biased, pass_activated);
+            addMishOps(block, pass_biased, pass_activated, 2, ph.gpool_to_pass_mul.out_channels);
         } else {
             pass_activated = pass_biased;
         }
 
-        pass_out = m_use_fp16 ? "policy_pass_mul2_fp16" : "policy_pass_mul2";  // v15+ name
+        pass_out = m_use_fp16 ? "policy_pass_fp16" : "policy_pass";  // Match Python naming
         addMatMulOp(block, pass_activated, *ph.gpool_to_pass_mul2, pass_out);
     } else {
         // Pre-v15: single layer pass
@@ -2082,7 +2096,7 @@ void MILBuilder::buildValueHead(CoreML::Specification::MILSpec::Block* block,
         inputs["x"].add_arguments()->set_name(v2_bias);
         setTensorOutput2D(op, v2, vh.v2_mul.out_channels, m_weight_dtype);
     } else if (vh.v2_activation.activation_type == ActivationType::Mish) {
-        addMishOps(block, v2_bias, v2);
+        addMishOps(block, v2_bias, v2, 2, vh.v2_mul.out_channels);
     } else {
         v2 = v2_bias;
     }
@@ -2115,9 +2129,14 @@ std::string MILBuilder::buildSGFMetadataEncoder(CoreML::Specification::MILSpec::
         inputs["x"].add_arguments()->set_name(bias1);
         setTensorOutput2D(op, act1, encoder.mul1.out_channels, m_weight_dtype);
     } else if (encoder.act1.activation_type == ActivationType::Mish) {
-        addMishOps(block, bias1, act1);
+        addMishOps(block, bias1, act1, 2, encoder.mul1.out_channels);
     } else {
-        act1 = bias1;
+        // Identity activation - create identity op to preserve type information
+        auto* op = block->add_operations();
+        op->set_type("identity");
+        auto& inputs = *op->mutable_inputs();
+        inputs["x"].add_arguments()->set_name(bias1);
+        setTensorOutput2D(op, act1, encoder.mul1.out_channels, m_weight_dtype);
     }
 
     // Layer 2 (fused matmul+bias -> linear)
@@ -2132,9 +2151,14 @@ std::string MILBuilder::buildSGFMetadataEncoder(CoreML::Specification::MILSpec::
         inputs["x"].add_arguments()->set_name(bias2);
         setTensorOutput2D(op, act2, encoder.mul2.out_channels, m_weight_dtype);
     } else if (encoder.act2.activation_type == ActivationType::Mish) {
-        addMishOps(block, bias2, act2);
+        addMishOps(block, bias2, act2, 2, encoder.mul2.out_channels);
     } else {
-        act2 = bias2;
+        // Identity activation - create identity op to preserve type information
+        auto* op = block->add_operations();
+        op->set_type("identity");
+        auto& inputs = *op->mutable_inputs();
+        inputs["x"].add_arguments()->set_name(bias2);
+        setTensorOutput2D(op, act2, encoder.mul2.out_channels, m_weight_dtype);
     }
 
     // Layer 3 (output)

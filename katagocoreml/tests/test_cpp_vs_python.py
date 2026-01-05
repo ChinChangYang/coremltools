@@ -128,6 +128,7 @@ class TestCppVsPythonConverterFP32:
         [
             "g170e-b10c128-s1141046784-d204142634.bin.gz",  # Standard model
             "g170-b6c96-s175395328-d26788732.bin.gz",       # Smaller model
+            "b5c192nbt-distilled.bin.gz",                   # Distilled model (human SL with metadata)
         ],
     )
     @pytest.mark.parametrize("board_size", [9, 13, 19])
@@ -209,6 +210,12 @@ class TestCppVsPythonConverterFP32:
             "global_input": global_input,
             "input_mask": input_mask,
         }
+
+        # Add meta_input for human SL networks (models with metadata encoder)
+        cpp_spec = cpp_model.get_spec()
+        cpp_input_names = [inp.name for inp in cpp_spec.description.input]
+        if "meta_input" in cpp_input_names:
+            inputs["meta_input"] = np.zeros((1, 192), dtype=np.float32)
 
         # Run inference
         cpp_outputs = cpp_model.predict(inputs)
@@ -309,6 +316,7 @@ class TestCppVsPythonConverterFP16:
         "model_name",
         [
             "g170-b6c96-s175395328-d26788732.bin.gz",       # Smaller model
+            "b5c192nbt-distilled.bin.gz",                   # Distilled model (human SL with metadata)
         ],
     )
     @pytest.mark.parametrize("board_size", [9, 19])
@@ -382,6 +390,12 @@ class TestCppVsPythonConverterFP16:
             "global_input": global_input,
             "input_mask": input_mask,
         }
+
+        # Add meta_input for human SL networks (models with metadata encoder)
+        cpp_spec = cpp_model.get_spec()
+        cpp_input_names = [inp.name for inp in cpp_spec.description.input]
+        if "meta_input" in cpp_input_names:
+            inputs["meta_input"] = np.zeros((1, 192), dtype=np.float32)
 
         # Run inference
         cpp_outputs = cpp_model.predict(inputs)

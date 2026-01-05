@@ -27,6 +27,12 @@ struct ConversionOptions {
 
     /// KataGo model version (set internally during conversion)
     int model_version = 0;
+
+    /// Metadata encoder version (0 = no encoder, >0 = has encoder)
+    int meta_encoder_version = 0;
+
+    /// Number of metadata input channels (192 for human SL networks)
+    int num_input_meta_channels = 0;
 };
 
 /// Information about a KataGo model (without full conversion)

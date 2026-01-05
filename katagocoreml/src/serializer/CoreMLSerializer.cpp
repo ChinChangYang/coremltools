@@ -85,6 +85,16 @@ std::unique_ptr<CoreML::Specification::Model> CoreMLSerializer::createModelSpec(
     mask_type->add_shape(options.board_y_size);
     mask_type->add_shape(options.board_x_size);
 
+    // meta_input (optional, for human SL networks with metadata encoder)
+    if (options.meta_encoder_version > 0 && options.num_input_meta_channels > 0) {
+        auto* meta_input = desc->add_input();
+        meta_input->set_name("meta_input");
+        auto* meta_type = meta_input->mutable_type()->mutable_multiarraytype();
+        meta_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
+        meta_type->add_shape(1);
+        meta_type->add_shape(options.num_input_meta_channels);
+    }
+
     // Add output descriptions (names match Python coremltools converter)
     auto* policy_output = desc->add_output();
     policy_output->set_name("policy_p2_conv");
@@ -92,8 +102,8 @@ std::unique_ptr<CoreML::Specification::Model> CoreMLSerializer::createModelSpec(
     policy_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
 
     auto* pass_output = desc->add_output();
-    // Pass output name depends on model version: v15+ uses "policy_pass_mul2", pre-v15 uses "policy_pass"
-    pass_output->set_name(options.model_version >= 15 ? "policy_pass_mul2" : "policy_pass");
+    // Pass output name: Python uses "policy_pass" for all model versions
+    pass_output->set_name("policy_pass");
     auto* pass_type = pass_output->mutable_type()->mutable_multiarraytype();
     pass_type->set_datatype(CoreML::Specification::ArrayFeatureType::FLOAT32);
 

@@ -90,7 +90,27 @@ def smaller_model_bin():
 
 
 @pytest.fixture(scope="session")
-def all_test_models(standard_model_bin, smaller_model_bin):
+def distilled_model_bin():
+    """Path to distilled KataGo model (b5c192nbt) with metadata encoder.
+
+    This is a human SL model that requires meta_input (192 channels).
+
+    Returns:
+        Path: Path to the model file
+
+    Skips:
+        If the model file is not found
+    """
+    model_path = KATAGO_MODELS_DIR / "b5c192nbt-distilled.bin.gz"
+
+    if not model_path.exists():
+        pytest.skip(f"Distilled model not found: {model_path}")
+
+    return model_path
+
+
+@pytest.fixture(scope="session")
+def all_test_models(standard_model_bin, smaller_model_bin, distilled_model_bin):
     """Dictionary of all available test models.
 
     Returns:
@@ -99,6 +119,7 @@ def all_test_models(standard_model_bin, smaller_model_bin):
     return {
         "g170e-b10c128-s1141046784-d204142634.bin.gz": standard_model_bin,
         "g170-b6c96-s175395328-d26788732.bin.gz": smaller_model_bin,
+        "b5c192nbt-distilled.bin.gz": distilled_model_bin,
     }
 
 

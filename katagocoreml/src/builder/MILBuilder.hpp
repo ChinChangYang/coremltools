@@ -88,7 +88,9 @@ private:
 
     void addMishOps(CoreML::Specification::MILSpec::Block* block,
                     const std::string& input,
-                    const std::string& output);
+                    const std::string& output,
+                    int rank,
+                    int channels);
 
     void addGlobalPoolingOps(CoreML::Specification::MILSpec::Block* block,
                              const std::string& input,
